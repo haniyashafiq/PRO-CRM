@@ -9,12 +9,6 @@ import io
 app = Flask(__name__)
 
 # --- DATABASE CONFIGURATION ---
-# We updated the fallback URI to use your working credentials:
-# User: taha_admin
-# Pass: hospital123
-# Cluster: ukoxtzf
-# DB: hospital_crm_db
-# Auth: authSource=admin
 mongo_uri = os.environ.get("MONGO_URI", "mongodb+srv://taha_admin:hospital123@cluster0.ukoxtzf.mongodb.net/hospital_crm_db?retryWrites=true&w=majority&appName=Cluster0&authSource=admin")
 app.config["MONGO_URI"] = mongo_uri
 
@@ -28,9 +22,10 @@ except Exception as e:
 def index():
     return render_template('index.html')
 
-# Helper to check DB connection
+# --- HELPER: FIXED DATABASE CHECK ---
 def check_db():
-    if not mongo or not mongo.db:
+    # FIXED: We compare explicitly with None to fix the Python 3.13/PyMongo error
+    if mongo is None or mongo.db is None:
         print("Database connection failed or not initialized.")
         return False
     return True
@@ -54,7 +49,7 @@ def add_patient():
     if not check_db(): return jsonify({"error": "Database error"}), 500
     try:
         data = request.json
-        # Use datetime.now() instead of utcnow() to avoid depreciation warnings
+        # Use datetime.now() to avoid depreciation warnings
         data['created_at'] = datetime.now()
         data['notes'] = [] 
         result = mongo.db.patients.insert_one(data)
