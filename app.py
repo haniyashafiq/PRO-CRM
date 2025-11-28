@@ -9,10 +9,13 @@ import io
 app = Flask(__name__)
 
 # --- DATABASE CONFIGURATION ---
-# 1. On Local: It uses localhost (requires MongoDB installed).
-# 2. On Vercel: You MUST set the 'MONGO_URI' environment variable in Vercel Settings.
-#    If not set, it defaults to localhost and will FAIL on Vercel.
-mongo_uri = os.environ.get("MONGO_URI", "mongodb+srv://taha-a-hashmi:123@cluster0.vxgxiip.mongodb.net/hospital_crm_db?retryWrites=true&w=majority&appName=Cluster0")
+# We updated the fallback URI to use your working credentials:
+# User: taha_admin
+# Pass: hospital123
+# Cluster: ukoxtzf
+# DB: hospital_crm_db
+# Auth: authSource=admin
+mongo_uri = os.environ.get("MONGO_URI", "mongodb+srv://taha_admin:hospital123@cluster0.ukoxtzf.mongodb.net/hospital_crm_db?retryWrites=true&w=majority&appName=Cluster0&authSource=admin")
 app.config["MONGO_URI"] = mongo_uri
 
 try:
@@ -51,7 +54,8 @@ def add_patient():
     if not check_db(): return jsonify({"error": "Database error"}), 500
     try:
         data = request.json
-        data['created_at'] = datetime.utcnow()
+        # Use datetime.now() instead of utcnow() to avoid depreciation warnings
+        data['created_at'] = datetime.now()
         data['notes'] = [] 
         result = mongo.db.patients.insert_one(data)
         return jsonify({"message": "Success", "id": str(result.inserted_id)}), 201
