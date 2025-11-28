@@ -8,16 +8,33 @@ import io
 
 app = Flask(__name__)
 
-# Config - Assumes local MongoDB
-app.config["MONGO_URI"] = "mongodb://localhost:27017/hospital_crm_db"
-mongo = PyMongo(app)
+# --- DATABASE CONFIGURATION ---
+# 1. On Local: It uses localhost (requires MongoDB installed).
+# 2. On Vercel: You MUST set the 'MONGO_URI' environment variable in Vercel Settings.
+#    If not set, it defaults to localhost and will FAIL on Vercel.
+mongo_uri = os.environ.get("MONGO_URI", "mongodb://localhost:27017/hospital_crm_db")
+app.config["MONGO_URI"] = mongo_uri
+
+try:
+    mongo = PyMongo(app)
+except Exception as e:
+    print(f"Error initializing MongoDB: {e}")
+    mongo = None
 
 @app.route('/')
 def index():
     return render_template('index.html')
 
+# Helper to check DB connection
+def check_db():
+    if not mongo or not mongo.db:
+        print("Database connection failed or not initialized.")
+        return False
+    return True
+
 @app.route('/api/patients', methods=['GET'])
 def get_patients():
+    if not check_db(): return jsonify([])
     try:
         patients_cursor = mongo.db.patients.find()
         patients = []
@@ -26,37 +43,55 @@ def get_patients():
             patients.append(p)
         return jsonify(patients)
     except Exception as e:
-        print(f"DB Error: {e}")
+        print(f"DB Fetch Error: {e}")
         return jsonify([])
 
 @app.route('/api/patients', methods=['POST'])
 def add_patient():
-    data = request.json
-    data['created_at'] = datetime.utcnow()
-    data['notes'] = [] 
-    result = mongo.db.patients.insert_one(data)
-    return jsonify({"message": "Success", "id": str(result.inserted_id)}), 201
+    if not check_db(): return jsonify({"error": "Database error"}), 500
+    try:
+        data = request.json
+        data['created_at'] = datetime.utcnow()
+        data['notes'] = [] 
+        result = mongo.db.patients.insert_one(data)
+        return jsonify({"message": "Success", "id": str(result.inserted_id)}), 201
+    except Exception as e:
+        print(f"DB Insert Error: {e}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/patients/<id>', methods=['PUT'])
 def update_patient(id):
-    data = request.json
-    if '_id' in data: del data['_id']
-    mongo.db.patients.update_one({'_id': ObjectId(id)}, {'$set': data})
-    return jsonify({"message": "Updated"})
+    if not check_db(): return jsonify({"error": "Database error"}), 500
+    try:
+        data = request.json
+        if '_id' in data: del data['_id']
+        mongo.db.patients.update_one({'_id': ObjectId(id)}, {'$set': data})
+        return jsonify({"message": "Updated"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/patients/<id>/notes', methods=['POST'])
 def add_note(id):
-    note = request.json 
-    mongo.db.patients.update_one({'_id': ObjectId(id)}, {'$push': {'notes': note}})
-    return jsonify({"message": "Note added"})
+    if not check_db(): return jsonify({"error": "Database error"}), 500
+    try:
+        note = request.json 
+        mongo.db.patients.update_one({'_id': ObjectId(id)}, {'$push': {'notes': note}})
+        return jsonify({"message": "Note added"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/patients/<id>', methods=['DELETE'])
 def delete_patient(id):
-    mongo.db.patients.delete_one({'_id': ObjectId(id)})
-    return jsonify({"message": "Deleted"})
+    if not check_db(): return jsonify({"error": "Database error"}), 500
+    try:
+        mongo.db.patients.delete_one({'_id': ObjectId(id)})
+        return jsonify({"message": "Deleted"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/export', methods=['POST'])
 def export_patients():
+    if not check_db(): return jsonify({"error": "Database error"}), 500
     try:
         req_data = request.get_json() or {}
         selected_fields = req_data.get('fields', 'all')
@@ -91,13 +126,11 @@ def export_patients():
 
         df = pd.DataFrame(export_data)
 
-        # Filter Columns
         if isinstance(selected_fields, list) and len(selected_fields) > 0:
             valid_fields = [f for f in selected_fields if f in df.columns]
             if valid_fields:
                 df = df[valid_fields]
 
-        # Generate Excel
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             df.to_excel(writer, index=False, sheet_name='Patients')
