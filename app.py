@@ -1,0 +1,119 @@
+from flask import Flask, render_template, request, jsonify, send_file
+from flask_pymongo import PyMongo
+from bson.objectid import ObjectId
+import os
+from datetime import datetime
+import pandas as pd
+import io
+
+app = Flask(__name__)
+
+# Config - Assumes local MongoDB
+app.config["MONGO_URI"] = "mongodb://localhost:27017/hospital_crm_db"
+mongo = PyMongo(app)
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+@app.route('/api/patients', methods=['GET'])
+def get_patients():
+    try:
+        patients_cursor = mongo.db.patients.find()
+        patients = []
+        for p in patients_cursor:
+            p['_id'] = str(p['_id'])
+            patients.append(p)
+        return jsonify(patients)
+    except Exception as e:
+        print(f"DB Error: {e}")
+        return jsonify([])
+
+@app.route('/api/patients', methods=['POST'])
+def add_patient():
+    data = request.json
+    data['created_at'] = datetime.utcnow()
+    data['notes'] = [] 
+    result = mongo.db.patients.insert_one(data)
+    return jsonify({"message": "Success", "id": str(result.inserted_id)}), 201
+
+@app.route('/api/patients/<id>', methods=['PUT'])
+def update_patient(id):
+    data = request.json
+    if '_id' in data: del data['_id']
+    mongo.db.patients.update_one({'_id': ObjectId(id)}, {'$set': data})
+    return jsonify({"message": "Updated"})
+
+@app.route('/api/patients/<id>/notes', methods=['POST'])
+def add_note(id):
+    note = request.json 
+    mongo.db.patients.update_one({'_id': ObjectId(id)}, {'$push': {'notes': note}})
+    return jsonify({"message": "Note added"})
+
+@app.route('/api/patients/<id>', methods=['DELETE'])
+def delete_patient(id):
+    mongo.db.patients.delete_one({'_id': ObjectId(id)})
+    return jsonify({"message": "Deleted"})
+
+@app.route('/api/export', methods=['POST'])
+def export_patients():
+    try:
+        req_data = request.get_json() or {}
+        selected_fields = req_data.get('fields', 'all')
+        
+        cursor = mongo.db.patients.find()
+        patients_list = list(cursor)
+        
+        if not patients_list:
+            return jsonify({"error": "No patients found"}), 404
+
+        # Prepare Data
+        export_data = []
+        for p in patients_list:
+            row = {
+                'name': p.get('name', ''),
+                'fatherName': p.get('fatherName', ''),
+                'admissionDate': p.get('admissionDate', ''),
+                'idNo': p.get('idNo', ''),
+                'age': p.get('age', ''),
+                'cnic': p.get('cnic', ''),
+                'contactNo': p.get('contactNo', ''),
+                'address': p.get('address', ''),
+                'complaint': p.get('complaint', ''),
+                'guardianName': p.get('guardianName', ''),
+                'relation': p.get('relation', ''),
+                'drugProblem': p.get('drugProblem', ''),
+                'maritalStatus': p.get('maritalStatus', ''),
+                'prevAdmissions': p.get('prevAdmissions', ''),
+                'created_at': p.get('created_at', '')
+            }
+            export_data.append(row)
+
+        df = pd.DataFrame(export_data)
+
+        # Filter Columns
+        if isinstance(selected_fields, list) and len(selected_fields) > 0:
+            valid_fields = [f for f in selected_fields if f in df.columns]
+            if valid_fields:
+                df = df[valid_fields]
+
+        # Generate Excel
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='Patients')
+        
+        output.seek(0)
+        
+        return send_file(
+            output, 
+            download_name="patients_export.xlsx", 
+            as_attachment=True, 
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    except ImportError:
+        return jsonify({"error": "Missing 'openpyxl' library"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+if __name__ == '__main__':
+    app.run(debug=True, port=5000)
