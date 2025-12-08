@@ -459,5 +459,44 @@ def export_patients():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+
+# --- NEW ACCOUNTS ROUTE (ADMIN ONLY) ---
+
+@app.route('/api/accounts/summary', methods=['GET'])
+@role_required(['Admin'])
+def get_accounts_summary():
+    if not check_db(): return jsonify({"error": "Database error"}), 500
+    try:
+        # Get all patients
+        patients = list(mongo.db.patients.find({}, {
+            'name': 1, 'fatherName': 1, 'admissionDate': 1, 
+            'monthlyFee': 1, 'address': 1, 'age': 1
+        }))
+        
+        # Get total canteen sales per patient
+        pipeline = [
+            {'$group': {'_id': '$patient_id', 'total_sales': {'$sum': '$amount'}}}
+        ]
+        sales_data = list(mongo.db.canteen_sales.aggregate(pipeline))
+        sales_map = {str(s['_id']): s['total_sales'] for s in sales_data}
+
+        summary = []
+        for p in patients:
+            pid = str(p['_id'])
+            summary.append({
+                'id': pid,
+                'name': p.get('name', ''),
+                'fatherName': p.get('fatherName', ''),
+                'age': p.get('age', ''),
+                'area': p.get('address', ''), # Using address as "Area"
+                'admissionDate': p.get('admissionDate', ''),
+                'monthlyFee': p.get('monthlyFee', '0'),
+                'canteenTotal': sales_map.get(pid, 0)
+            })
+        
+        return jsonify(summary)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
