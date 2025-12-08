@@ -137,16 +137,16 @@ def create_user():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route('/api/users/<id>', methods=['DELETE'])
+@app.route('/api/patients/<id>', methods=['DELETE'])
 @role_required(['Admin'])
-def delete_user(id):
+def delete_patient(id):
     if not check_db(): return jsonify({"error": "Database error"}), 500
     try:
-        # Prevent deleting the logged-in user or the primary admin by ID if necessary
-        mongo.db.users.delete_one({'_id': ObjectId(id)})
-        return jsonify({"message": "User deleted"})
+        mongo.db.patients.delete_one({'_id': ObjectId(id)})
+        return jsonify({"message": "Patient deleted"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 @app.route('/api/users/change_password', methods=['POST'])
 @login_required
