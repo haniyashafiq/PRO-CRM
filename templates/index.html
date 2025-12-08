@@ -521,7 +521,7 @@
           const fee = formatCurrency(parseInt(p.monthlyFee.replace(/,/g, '') || 0));
           const deleteBtn =
             currentUser.role === 'Admin'
-              ? `<button class="action-btn text-red-400 hover:text-red-600" onclick="deletePatient('${id}')"><i class="fas fa-trash"></i></button>`
+              ? `<button class="action-btn text-red-400 hover:text-red-600" onclick="event.stopPropagation(); deletePatient('${id}');"><i class="fas fa-trash"></i></button>`
               : '';
 
           tr.innerHTML = `<td class="px-6 py-4 font-medium whitespace-nowrap">${p.name}</td>
@@ -538,29 +538,100 @@
         });
       }
 
-      window.addNewPatient = async function () {
-        const n = prompt('Patient Name:');
-        if (n) {
-          await fetch('/api/patients', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              name: n,
-              admissionDate: new Date().toISOString().split('T')[0],
-              monthlyFee: '0',
-              monthlyAllowance: '3000',
-            }),
-          });
-          fetchPatients();
+      window.addNewPatient = async function (e) {
+        e.preventDefault();
+        const formData = {
+          name: document.getElementById('new-patient-name').value,
+          fatherName: document.getElementById('new-patient-father').value,
+          admissionDate: document.getElementById('new-patient-admission').value,
+          age: document.getElementById('new-patient-age').value,
+          cnic: document.getElementById('new-patient-cnic').value,
+          contactNo: document.getElementById('new-patient-contact').value,
+          guardianName: document.getElementById('new-patient-guardian').value,
+          address: document.getElementById('new-patient-address').value,
+          monthlyFee: document.getElementById('new-patient-fee').value || '0',
+          monthlyAllowance: document.getElementById('new-patient-allowance').value || '3000',
+        };
+
+        const res = await fetch('/api/patients', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(formData),
+        });
+
+        if (res.ok) {
+          document.getElementById('new-admission-modal').classList.add('hidden');
+          document.getElementById('new-admission-form').reset();
+          await fetchPatients();
+          showSuccessModal('Patient admitted successfully!');
+        } else {
+          showSuccessModal('Error adding patient. Please try again.', true);
         }
       };
 
-      window.deletePatient = async function (id) {
-        if (currentUser.role !== 'Admin') return;
-        if (confirm('Permanently delete this patient record?')) {
-          await fetch(`/api/patients/${id}`, { method: 'DELETE' });
-          fetchPatients();
+      window.openNewAdmissionModal = function () {
+        // Set today's date as default
+        const today = new Date().toISOString().split('T')[0];
+        document.getElementById('new-patient-admission').value = today;
+        document.getElementById('new-admission-modal').classList.remove('hidden');
+      };
+
+      window.showSuccessModal = function (message, isError = false) {
+        const modal = document.getElementById('success-modal');
+        const messageEl = document.getElementById('success-message');
+        const iconEl = document.getElementById('success-icon');
+
+        messageEl.textContent = message;
+
+        if (isError) {
+          iconEl.innerHTML = '<i class="fas fa-exclamation-circle text-6xl text-red-500"></i>';
+        } else {
+          iconEl.innerHTML = '<i class="fas fa-check-circle text-6xl text-green-500"></i>';
         }
+
+        modal.classList.remove('hidden');
+
+        // Auto-close after 3 seconds
+        setTimeout(() => {
+          modal.classList.add('hidden');
+        }, 3000);
+      };
+
+      window.deletePatient = async function (id) {
+        if (currentUser.role !== 'Admin') {
+          showSuccessModal('Only administrators can delete patient records.', true);
+          return;
+        }
+
+        // Store the patient ID for the confirmation callback
+        window.pendingDeletePatientId = id;
+        document.getElementById('confirm-modal').classList.remove('hidden');
+      };
+
+      window.confirmDeletePatient = async function () {
+        const id = window.pendingDeletePatientId;
+        document.getElementById('confirm-modal').classList.add('hidden');
+
+        if (!id) return;
+
+        try {
+          const res = await fetch(`/api/patients/${id}`, { method: 'DELETE' });
+          if (res.ok) {
+            await fetchPatients();
+            showSuccessModal('Patient record deleted successfully.');
+          } else {
+            const errorData = await res.json().catch(() => ({}));
+            showSuccessModal(
+              errorData.error || 'Failed to delete patient. Please try again.',
+              true
+            );
+          }
+        } catch (error) {
+          console.error('Delete error:', error);
+          showSuccessModal('Network error. Please check your connection and try again.', true);
+        }
+
+        window.pendingDeletePatientId = null;
       };
 
       // --- PATIENT DETAILS & CALENDAR ---
@@ -1110,7 +1181,7 @@
             </button>
             <button
               id="add-new-patient-btn"
-              onclick="addNewPatient()"
+              onclick="openNewAdmissionModal()"
               class="bg-green-600 text-white px-4 py-2 rounded hover:bg-green-700 text-center"
             >
               <i class="fas fa-plus mr-2"></i>New Admission
@@ -1401,6 +1472,208 @@
         }
       }
     </script>
+
+    <div
+      id="new-admission-modal"
+      class="fixed inset-0 bg-gray-900 bg-opacity-50 hidden flex items-center justify-center z-50"
+    >
+      <div
+        class="bg-white p-6 rounded-xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto"
+      >
+        <div class="flex justify-between items-center mb-6">
+          <h3 class="text-2xl font-bold text-green-900">
+            <i class="fas fa-user-plus mr-2"></i>New Patient Admission
+          </h3>
+          <button
+            onclick="document.getElementById('new-admission-modal').classList.add('hidden')"
+            class="text-gray-400 hover:text-gray-600 text-2xl"
+          >
+            <i class="fas fa-times"></i>
+          </button>
+        </div>
+
+        <form id="new-admission-form" onsubmit="addNewPatient(event)">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label class="block text-sm font-semibold text-gray-700 mb-1">Patient Name *</label>
+              <input
+                type="text"
+                id="new-patient-name"
+                class="w-full border border-gray-300 p-2 rounded focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                placeholder="Enter full name"
+                required
+              />
+            </div>
+
+            <div>
+              <label class="block text-sm font-semibold text-gray-700 mb-1">Father's Name</label>
+              <input
+                type="text"
+                id="new-patient-father"
+                class="w-full border border-gray-300 p-2 rounded focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                placeholder="Enter father's name"
+              />
+            </div>
+
+            <div>
+              <label class="block text-sm font-semibold text-gray-700 mb-1">Admission Date *</label>
+              <input
+                type="date"
+                id="new-patient-admission"
+                class="w-full border border-gray-300 p-2 rounded focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                required
+              />
+            </div>
+
+            <div>
+              <label class="block text-sm font-semibold text-gray-700 mb-1">Age</label>
+              <input
+                type="number"
+                id="new-patient-age"
+                class="w-full border border-gray-300 p-2 rounded focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                placeholder="Enter age"
+              />
+            </div>
+
+            <div>
+              <label class="block text-sm font-semibold text-gray-700 mb-1">CNIC</label>
+              <input
+                type="text"
+                id="new-patient-cnic"
+                class="w-full border border-gray-300 p-2 rounded focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                placeholder="XXXXX-XXXXXXX-X"
+              />
+            </div>
+
+            <div>
+              <label class="block text-sm font-semibold text-gray-700 mb-1">Contact Number</label>
+              <input
+                type="tel"
+                id="new-patient-contact"
+                class="w-full border border-gray-300 p-2 rounded focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                placeholder="03XX-XXXXXXX"
+              />
+            </div>
+
+            <div>
+              <label class="block text-sm font-semibold text-gray-700 mb-1">Guardian Name</label>
+              <input
+                type="text"
+                id="new-patient-guardian"
+                class="w-full border border-gray-300 p-2 rounded focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                placeholder="Enter guardian name"
+              />
+            </div>
+
+            <div>
+              <label class="block text-sm font-semibold text-gray-700 mb-1">Monthly Fee</label>
+              <input
+                type="number"
+                id="new-patient-fee"
+                class="w-full border border-gray-300 p-2 rounded focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                placeholder="0"
+                value="0"
+              />
+            </div>
+
+            <div class="md:col-span-2">
+              <label class="block text-sm font-semibold text-gray-700 mb-1">Address</label>
+              <textarea
+                id="new-patient-address"
+                class="w-full border border-gray-300 p-2 rounded focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                placeholder="Enter complete address"
+                rows="2"
+              ></textarea>
+            </div>
+
+            <div>
+              <label class="block text-sm font-semibold text-gray-700 mb-1"
+                >Monthly Allowance</label
+              >
+              <input
+                type="number"
+                id="new-patient-allowance"
+                class="w-full border border-gray-300 p-2 rounded focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                placeholder="3000"
+                value="3000"
+              />
+            </div>
+          </div>
+
+          <div class="flex gap-3 mt-6">
+            <button
+              type="submit"
+              class="flex-1 bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700 transition"
+            >
+              <i class="fas fa-check mr-2"></i>Admit Patient
+            </button>
+            <button
+              type="button"
+              onclick="document.getElementById('new-admission-modal').classList.add('hidden'); document.getElementById('new-admission-form').reset();"
+              class="flex-1 bg-gray-200 text-gray-700 py-3 rounded-lg font-semibold hover:bg-gray-300 transition"
+            >
+              <i class="fas fa-times mr-2"></i>Cancel
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <div
+      id="confirm-modal"
+      class="fixed inset-0 bg-gray-900 bg-opacity-50 hidden flex items-center justify-center z-50"
+    >
+      <div class="bg-white p-8 rounded-xl shadow-2xl w-full max-w-md mx-4">
+        <div class="text-center mb-6">
+          <div
+            class="mx-auto w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mb-4"
+          >
+            <i class="fas fa-exclamation-triangle text-3xl text-red-600"></i>
+          </div>
+          <h3 class="text-xl font-bold text-gray-900 mb-2">Confirm Deletion</h3>
+          <p class="text-gray-600">
+            Permanently delete this patient record? This action cannot be undone.
+          </p>
+        </div>
+
+        <div class="flex gap-3">
+          <button
+            onclick="confirmDeletePatient()"
+            class="flex-1 bg-red-600 text-white py-3 rounded-lg font-semibold hover:bg-red-700 transition"
+          >
+            <i class="fas fa-trash mr-2"></i>Delete
+          </button>
+          <button
+            onclick="document.getElementById('confirm-modal').classList.add('hidden'); window.pendingDeletePatientId = null;"
+            class="flex-1 bg-gray-200 text-gray-700 py-3 rounded-lg font-semibold hover:bg-gray-300 transition"
+          >
+            <i class="fas fa-times mr-2"></i>Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div
+      id="success-modal"
+      class="fixed inset-0 bg-gray-900 bg-opacity-50 hidden flex items-center justify-center z-50"
+    >
+      <div
+        class="bg-white p-8 rounded-xl shadow-2xl w-full max-w-md mx-4 text-center transform transition-all"
+      >
+        <div id="success-icon" class="mb-4">
+          <i class="fas fa-check-circle text-6xl text-green-500"></i>
+        </div>
+        <p id="success-message" class="text-xl font-semibold text-gray-800 mb-6">
+          Patient admitted successfully!
+        </p>
+        <button
+          onclick="document.getElementById('success-modal').classList.add('hidden')"
+          class="bg-green-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-green-700 transition"
+        >
+          OK
+        </button>
+      </div>
+    </div>
 
     <div
       id="password-modal"
