@@ -6,6 +6,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 import os
 import pandas as pd
 import io
+from dotenv import load_dotenv  # 1. Add this import
 
 app = Flask(__name__)
 
