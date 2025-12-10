@@ -138,15 +138,15 @@ def create_user():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route('/api/patients/<id>', methods=['DELETE'])
-@role_required(['Admin'])
-def delete_patient(id):
-    if not check_db(): return jsonify({"error": "Database error"}), 500
-    try:
-        mongo.db.patients.delete_one({'_id': ObjectId(id)})
-        return jsonify({"message": "Patient deleted"})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+# @app.route('/api/patients/<id>', methods=['DELETE'])
+# @role_required(['Admin'])
+# def delete_patient(id):
+#     if not check_db(): return jsonify({"error": "Database error"}), 500
+#     try:
+#         mongo.db.patients.delete_one({'_id': ObjectId(id)})
+#         return jsonify({"message": "Patient deleted"})
+#     except Exception as e:
+#         return jsonify({"error": str(e)}), 500
 
 
 @app.route('/api/users/change_password', methods=['POST'])
@@ -946,6 +946,148 @@ def get_call_meeting_summary(month, year):
         })
     except Exception as e:
         print(f"Call/Meeting Summary Error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# --- UTILITY BILLS ROUTES ---
+
+@app.route('/api/utility_bills', methods=['GET'])
+@role_required(['Admin'])
+def get_utility_bills():
+    if not check_db(): return jsonify({"error": "Database error"}), 500
+    try:
+        # Fetch all bills sorted by due date (soonest first)
+        cursor = mongo.db.utility_bills.find().sort('due_date', 1)
+        bills = []
+        for b in cursor:
+            bills.append({
+                'id': str(b['_id']),
+                'type': b.get('type', 'Other'),
+                'provider': b.get('provider', ''),
+                'amount': b.get('amount', 0),
+                'due_date': b.get('due_date'),
+                'ref_no': b.get('ref_no', ''),
+                'status': 'Unpaid'
+            })
+        return jsonify(bills)
+    except Exception as e:
+        print(f"Bills Fetch Error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/utility_bills', methods=['POST'])
+@role_required(['Admin'])
+def add_utility_bill():
+    if not check_db(): return jsonify({"error": "Database error"}), 500
+    data = request.json
+    try:
+        bill = {
+            'type': data.get('type', 'Other'), # Electricity, Gas, etc.
+            'provider': data.get('provider', ''),
+            'amount': int(data.get('amount', 0)),
+            'due_date': data.get('due_date'),
+            'ref_no': data.get('ref_no', ''),
+            'created_at': datetime.now()
+        }
+        result = mongo.db.utility_bills.insert_one(bill)
+        return jsonify({"message": "Bill added", "id": str(result.inserted_id)}), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/utility_bills/<id>', methods=['DELETE'])
+@role_required(['Admin'])
+def pay_utility_bill(id):
+    if not check_db(): return jsonify({"error": "Database error"}), 500
+    try:
+        # OPTIONAL: When deleting/paying, record it as an expense automatically
+        bill = mongo.db.utility_bills.find_one({'_id': ObjectId(id)})
+        if bill:
+            # Add to expenses
+            mongo.db.expenses.insert_one({
+                'type': 'outgoing',
+                'amount': bill['amount'],
+                'category': 'Utility Bill',
+                'note': f"Paid bill for {bill.get('type')} (Ref: {bill.get('ref_no')})",
+                'date': datetime.now(),
+                'recorded_by': session.get('username', 'Admin'),
+                'created_at': datetime.now()
+            })
+            
+        # Remove from bills collection
+        mongo.db.utility_bills.delete_one({'_id': ObjectId(id)})
+        return jsonify({"message": "Bill paid and removed"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# --- TEAM / EMPLOYEE MANAGEMENT ROUTES ---
+@app.route('/api/employees', methods=['GET'])
+@role_required(['Admin'])
+def get_employees():
+    if not check_db(): return jsonify({"error": "Database error"}), 500
+    try:
+        # Sort by name alphabetically
+        cursor = mongo.db.employees.find().sort('name', 1)
+        employees = []
+        for e in cursor:
+            employees.append({
+                'id': str(e['_id']),
+                'name': e.get('name', ''),
+                'designation': e.get('designation', ''),
+                'pay': e.get('pay', ''),
+                'advance': e.get('advance', ''),
+                'duty_timings': e.get('duty_timings', ''),
+                'date_of_joining': e.get('date_of_joining', ''),
+                'cnic': e.get('cnic', ''),
+                'phone': e.get('phone', '')
+            })
+        return jsonify(employees)
+    except Exception as e:
+        print(f"Employee Fetch Error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/employees', methods=['POST'])
+@role_required(['Admin'])
+def add_employee():
+    if not check_db(): return jsonify({"error": "Database error"}), 500
+    data = request.json
+    try:
+        employee = {
+            'name': data.get('name'),
+            'designation': data.get('designation'),
+            'pay': data.get('pay', ''),
+            'advance': data.get('advance', ''),
+            'duty_timings': data.get('duty_timings', ''),
+            'date_of_joining': data.get('date_of_joining', ''),
+            'cnic': data.get('cnic', ''),
+            'phone': data.get('phone', ''),
+            'created_at': datetime.now()
+        }
+        result = mongo.db.employees.insert_one(employee)
+        return jsonify({"message": "Employee added", "id": str(result.inserted_id)}), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/employees/<id>', methods=['PUT'])
+@role_required(['Admin'])
+def update_employee(id):
+    if not check_db(): return jsonify({"error": "Database error"}), 500
+    data = request.json
+    # Remove _id from data if present to avoid immutable field error
+    if '_id' in data: del data['_id']
+    try:
+        mongo.db.employees.update_one({'_id': ObjectId(id)}, {'$set': data})
+        return jsonify({"message": "Employee updated"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/employees/<id>', methods=['DELETE'])
+@role_required(['Admin'])
+def delete_employee(id):
+    if not check_db(): return jsonify({"error": "Database error"}), 500
+    try:
+        mongo.db.employees.delete_one({'_id': ObjectId(id)})
+        return jsonify({"message": "Employee deleted"})
+    except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
