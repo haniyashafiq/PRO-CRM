@@ -803,11 +803,11 @@ def export_patients():
 def get_accounts_summary():
     if not check_db(): return jsonify({"error": "Database error"}), 500
     try:
-        # Get all patients
+        # Get all patients - ADDED 'receivedAmount' to the projection
         patients = list(mongo.db.patients.find({}, {
             'name': 1, 'fatherName': 1, 'admissionDate': 1, 
             'monthlyFee': 1, 'address': 1, 'age': 1,
-            'laundryStatus': 1, 'laundryAmount': 1
+            'laundryStatus': 1, 'laundryAmount': 1, 'receivedAmount': 1
         }))
         
         # Get total canteen sales per patient
@@ -825,17 +825,19 @@ def get_accounts_summary():
                 'name': p.get('name', ''),
                 'fatherName': p.get('fatherName', ''),
                 'age': p.get('age', ''),
-                'area': p.get('address', ''), # Using address as "Area"
+                'area': p.get('address', ''), 
                 'admissionDate': p.get('admissionDate', ''),
                 'monthlyFee': p.get('monthlyFee', '0'),
                 'canteenTotal': sales_map.get(pid, 0),
                 'laundryStatus': p.get('laundryStatus', False),
-                'laundryAmount': p.get('laundryAmount', 0)
+                'laundryAmount': p.get('laundryAmount', 0),
+                'receivedAmount': p.get('receivedAmount', '0') # NEW FIELD
             })
         
         return jsonify(summary)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
 
 # --- CALL & MEETING TRACKING APIs ---
 
