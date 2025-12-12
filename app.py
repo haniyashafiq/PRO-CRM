@@ -337,6 +337,8 @@ def add_patient():
         data['notes'] = [] # General Notes (Legacy)
         data['monthlyFee'] = data.get('monthlyFee', '0')
         data['monthlyAllowance'] = data.get('monthlyAllowance', '3000') # Default allowance
+        data['receivedAmount'] = data.get('receivedAmount', '0')  # New field
+        data['drug'] = data.get('drug', '')  # New field
         
         # Laundry fields
         data['laundryStatus'] = data.get('laundryStatus', False)  # Boolean: whether laundry service is enabled

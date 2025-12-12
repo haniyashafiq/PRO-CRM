@@ -1098,11 +1098,9 @@
 
             // Update table headers based on user role
             const isAdmin = currentUser.role === 'Admin';
-            const headerId = document.getElementById('header-id');
             const headerContact = document.getElementById('header-contact');
             const headerFee = document.getElementById('header-fee');
 
-            if (headerId) headerId.style.display = isAdmin ? '' : 'none';
             if (headerContact) headerContact.style.display = isAdmin ? '' : 'none';
             if (headerFee) headerFee.style.display = isAdmin ? '' : 'none';
           }
@@ -1116,10 +1114,11 @@
         tbody.innerHTML = '';
         if (list.length === 0) {
           tbody.innerHTML =
-            '<tr><td colspan="6" class="p-6 text-center text-gray-400">No records found.</td></tr>';
+            '<tr><td colspan="11" class="p-6 text-center text-gray-400">No records found.</td></tr>';
           return;
         }
-        list.forEach((p) => {
+
+        list.forEach((p, index) => {
           const id = p._id || p.id;
           const tr = document.createElement('tr');
           tr.className = 'hover:bg-gray-50 border-b cursor-pointer transition';
@@ -1129,29 +1128,87 @@
           };
 
           const isAdmin = currentUser.role === 'Admin';
-          const fee = formatCurrency(parseInt(p.monthlyFee.replace(/,/g, '') || 0));
+          const fee = formatCurrency(parseInt(p.monthlyFee?.replace(/,/g, '') || 0));
+          const receivedAmount = formatCurrency(parseInt(p.receivedAmount?.replace(/,/g, '') || 0));
           const deleteBtn =
             currentUser.role === 'Admin'
               ? `<button class="action-btn text-red-500 hover:text-red-700 transition" onclick="event.stopPropagation(); deletePatient('${id}');"><i class="fas fa-trash"></i></button>`
               : '';
 
-          // Admin sees: Name, ID, Contact, Fee, Status, Actions
-          // Non-admin sees: Name, Status only
+          // Generate serial number with month name and year
+          const admissionDate = p.admissionDate ? new Date(p.admissionDate) : new Date();
+          const monthNames = [
+            'Jan',
+            'Feb',
+            'Mar',
+            'Apr',
+            'May',
+            'Jun',
+            'Jul',
+            'Aug',
+            'Sep',
+            'Oct',
+            'Nov',
+            'Dec',
+          ];
+          const serialNo = `${
+            monthNames[admissionDate.getMonth()]
+          }${admissionDate.getFullYear()}-${String(index + 1).padStart(3, '0')}`;
+
+          // Format admission date (e.g., "Dec 12 2025")
+          const formattedAdmissionDate = `${
+            monthNames[admissionDate.getMonth()]
+          } ${admissionDate.getDate()} ${admissionDate.getFullYear()}`;
+
+          // Calculate days elapsed
+          const today = new Date();
+          const daysDiff = Math.floor((today - admissionDate) / (1000 * 60 * 60 * 24));
+          const daysElapsed = daysDiff >= 0 ? daysDiff : 0;
+
+          // Calculate days done out of 90
+          const daysDone = Math.min(daysElapsed, 90);
+          const daysProgress = `${daysDone}/90`;
+
           if (isAdmin) {
-            tr.innerHTML = `<td class="px-6 py-4 font-medium whitespace-nowrap">${p.name}</td>
-                            <td class="px-6 py-4 text-gray-500 whitespace-nowrap">${
-                              p.idNo || '-'
+            tr.innerHTML = `<td class="px-3 py-2 font-medium text-gray-700 whitespace-nowrap text-xs">${serialNo}</td>
+                            <td class="px-3 py-2 font-medium whitespace-nowrap">${
+                              p.name || '-'
                             }</td>
-                            <td class="px-6 py-4 text-gray-500 whitespace-nowrap">${
+                            <td class="px-3 py-2 text-gray-600 whitespace-nowrap">${
+                              p.fatherName || '-'
+                            }</td>
+                            <td class="px-3 py-2 text-gray-600 whitespace-nowrap">${
                               p.contactNo || '-'
                             }</td>
-                            <td class="px-6 py-4 font-semibold text-green-700 whitespace-nowrap">${fee}</td>
-                            <td class="px-6 py-4 text-center"><span class="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800">Active</span></td>
-                            <td class="px-6 py-4 text-right">${deleteBtn}</td>`;
+                            <td class="px-3 py-2 font-semibold text-green-700 whitespace-nowrap">${fee}</td>
+                            <td class="px-3 py-2 text-gray-600 whitespace-nowrap text-xs">${formattedAdmissionDate}</td>
+                            <td class="px-3 py-2 text-center text-gray-700 font-medium whitespace-nowrap text-xs">${daysProgress}</td>
+                            <td class="px-3 py-2 text-center text-gray-700 whitespace-nowrap text-xs">${daysElapsed} days</td>
+                            <td class="px-3 py-2 font-semibold text-blue-700 whitespace-nowrap">${receivedAmount}</td>
+                            <td class="px-3 py-2 text-gray-600 whitespace-nowrap">${
+                              p.drug || '-'
+                            }</td>
+                            <td class="px-3 py-2 text-right">${deleteBtn}</td>`;
           } else {
-            tr.innerHTML = `<td class="px-6 py-4 font-medium whitespace-nowrap">${p.name}</td>
-                            <td class="px-6 py-4 text-center"><span class="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800">Active</span></td>
-                            <td class="px-6 py-4 text-right"></td>`;
+            tr.innerHTML = `<td class="px-3 py-2 font-medium text-gray-700 whitespace-nowrap text-xs">${serialNo}</td>
+                            <td class="px-3 py-2 font-medium whitespace-nowrap">${
+                              p.name || '-'
+                            }</td>
+                            <td class="px-3 py-2 text-gray-600 whitespace-nowrap">${
+                              p.fatherName || '-'
+                            }</td>
+                            <td class="px-3 py-2 text-gray-600 whitespace-nowrap">${
+                              p.contactNo || '-'
+                            }</td>
+                            <td class="px-3 py-2 font-semibold text-green-700 whitespace-nowrap">${fee}</td>
+                            <td class="px-3 py-2 text-gray-600 whitespace-nowrap text-xs">${formattedAdmissionDate}</td>
+                            <td class="px-3 py-2 text-center text-gray-700 font-medium whitespace-nowrap text-xs">${daysProgress}</td>
+                            <td class="px-3 py-2 text-center text-gray-700 whitespace-nowrap text-xs">${daysElapsed} days</td>
+                            <td class="px-3 py-2 font-semibold text-blue-700 whitespace-nowrap">${receivedAmount}</td>
+                            <td class="px-3 py-2 text-gray-600 whitespace-nowrap">${
+                              p.drug || '-'
+                            }</td>
+                            <td class="px-3 py-2 text-right"></td>`;
           }
           tbody.appendChild(tr);
         });
@@ -1170,6 +1227,8 @@
           address: document.getElementById('new-patient-address').value,
           monthlyFee: document.getElementById('new-patient-fee').value || '0',
           monthlyAllowance: document.getElementById('new-patient-allowance').value || '3000',
+          receivedAmount: document.getElementById('new-patient-received').value || '0',
+          drug: document.getElementById('new-patient-drug').value || '',
           laundryStatus: document.getElementById('new-patient-laundry-status').checked,
           laundryAmount: document.getElementById('new-patient-laundry-amount').value || '3500',
         };
@@ -1304,10 +1363,11 @@
         setVal('det-relation', p.relation);
         setVal('det-address', p.address);
         setVal('det-complaint', p.complaint);
-        setVal('det-drug', p.drugProblem);
+        setVal('det-drug', p.drug);
         setVal('det-prev', p.prevAdmissions);
         setVal('det-fee', p.monthlyFee);
         setVal('det-allowance', p.monthlyAllowance);
+        setVal('det-received', p.receivedAmount);
 
         // Set laundry fields
         const laundryCheckbox = document.getElementById('det-laundry-status');
@@ -1436,6 +1496,8 @@
         if (currentUser.role === 'Admin') {
           data.monthlyFee = document.getElementById('det-fee').value;
           data.monthlyAllowance = document.getElementById('det-allowance').value;
+          data.receivedAmount = document.getElementById('det-received').value || '0';
+          data.drug = document.getElementById('det-drug').value || '';
 
           // Include laundry data
           const laundryCheckbox = document.getElementById('det-laundry-status');
@@ -2403,24 +2465,47 @@
           </div>
         </div>
         <div
-          class="kpi-card overflow-hidden"
+          class="kpi-card overflow-x-auto"
           style="padding: 0; border-color: rgba(16, 185, 129, 0.2)"
         >
-          <table class="min-w-full divide-y divide-emerald-100">
+          <table class="min-w-full divide-y divide-emerald-100" style="font-size: 0.875rem">
             <thead class="bg-gradient-to-r from-emerald-700 to-emerald-600 text-white">
               <tr id="patients-table-headers">
-                <th class="px-6 py-3 text-left whitespace-nowrap font-semibold">Name</th>
-                <th id="header-id" class="px-6 py-3 text-left whitespace-nowrap font-semibold">
-                  ID No
+                <th class="px-3 py-2 text-left whitespace-nowrap font-semibold text-xs">
+                  Serial No
                 </th>
-                <th id="header-contact" class="px-6 py-3 text-left whitespace-nowrap font-semibold">
+                <th class="px-3 py-2 text-left whitespace-nowrap font-semibold text-xs">Name</th>
+                <th class="px-3 py-2 text-left whitespace-nowrap font-semibold text-xs">
+                  Father Name
+                </th>
+                <th
+                  id="header-contact"
+                  class="px-3 py-2 text-left whitespace-nowrap font-semibold text-xs"
+                >
                   Contact
                 </th>
-                <th id="header-fee" class="px-6 py-3 text-left whitespace-nowrap font-semibold">
+                <th
+                  id="header-fee"
+                  class="px-3 py-2 text-left whitespace-nowrap font-semibold text-xs"
+                >
                   Fee
                 </th>
-                <th class="px-6 py-3 text-center whitespace-nowrap font-semibold">Status</th>
-                <th class="px-6 py-3 text-right whitespace-nowrap font-semibold">Actions</th>
+                <th class="px-3 py-2 text-left whitespace-nowrap font-semibold text-xs">
+                  Admission Date
+                </th>
+                <th class="px-3 py-2 text-center whitespace-nowrap font-semibold text-xs">
+                  Days Done
+                </th>
+                <th class="px-3 py-2 text-center whitespace-nowrap font-semibold text-xs">
+                  Days Elapsed
+                </th>
+                <th class="px-3 py-2 text-left whitespace-nowrap font-semibold text-xs">
+                  Received Amt
+                </th>
+                <th class="px-3 py-2 text-left whitespace-nowrap font-semibold text-xs">Drug</th>
+                <th class="px-3 py-2 text-right whitespace-nowrap font-semibold text-xs">
+                  Actions
+                </th>
               </tr>
             </thead>
             <tbody id="patients-table-body" class="divide-y divide-emerald-50"></tbody>
@@ -2470,7 +2555,6 @@
                     placeholder="Complaint"
                   ></textarea>
                 </div>
-                <input id="det-drug" class="border p-2 rounded" placeholder="Drug" />
                 <input id="det-prev" class="border p-2 rounded" placeholder="Prev Admissions" />
 
                 <div class="md:col-span-2 lg:col-span-3 mt-4 border-t pt-4 bg-gray-50 p-4">
@@ -2487,6 +2571,16 @@
                       id="det-allowance"
                       class="financial-input border p-2 rounded"
                       placeholder="Canteen Allowance"
+                    />
+                    <input
+                      id="det-received"
+                      class="financial-input border p-2 rounded"
+                      placeholder="Received Amount"
+                    />
+                    <input
+                      id="det-drug"
+                      class="financial-input border p-2 rounded"
+                      placeholder="Drug"
                     />
                     <div class="md:col-span-2">
                       <label
@@ -3160,6 +3254,27 @@
                 class="w-full border border-gray-300 p-2 rounded focus:ring-2 focus:ring-green-500 focus:border-transparent"
                 placeholder="3000"
                 value="3000"
+              />
+            </div>
+
+            <div>
+              <label class="block text-sm font-semibold text-gray-700 mb-1">Received Amount</label>
+              <input
+                type="number"
+                id="new-patient-received"
+                class="w-full border border-gray-300 p-2 rounded focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                placeholder="0"
+                value="0"
+              />
+            </div>
+
+            <div class="md:col-span-2">
+              <label class="block text-sm font-semibold text-gray-700 mb-1">Drug</label>
+              <input
+                type="text"
+                id="new-patient-drug"
+                class="w-full border border-gray-300 p-2 rounded focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                placeholder="Enter drug name or details"
               />
             </div>
 
