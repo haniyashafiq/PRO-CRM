@@ -594,6 +594,53 @@
       #canteen-breakdown-body tr.discharged-row td {
         color: #9ca3af !important;
       }
+
+      /* --- DAY/NIGHT REPORT TABLE COMPACT STYLES --- */
+      #day-report-container table,
+      #night-report-container table {
+        table-layout: fixed;
+        width: 100%;
+      }
+
+      #day-report-container th,
+      #night-report-container th {
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      #day-report-container td,
+      #night-report-container td {
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      /* Compact patient name column */
+      #day-report-container th:first-child,
+      #day-report-container td:first-child,
+      #night-report-container th:first-child,
+      #night-report-container td:first-child {
+        width: 15%;
+        min-width: 90px;
+        max-width: 140px;
+      }
+
+      /* Time slot columns - distribute remaining space evenly */
+      #day-report-container th:not(:first-child),
+      #day-report-container td:not(:first-child) {
+        width: calc(85% / 10); /* 10 time slots for day */
+      }
+
+      #night-report-container th:not(:first-child),
+      #night-report-container td:not(:first-child) {
+        width: calc(85% / 16); /* 16 time slots for night */
+      }
+
+      /* Reduce button size in report cells */
+      #day-report-container button,
+      #night-report-container button {
+        min-width: 0;
+        padding: 2px;
+      }
     </style>
     <script>
       let patientsData = [];
@@ -3092,6 +3139,148 @@
         }, 1000);
       }
 
+      // --- PAYMENT RECORDS LOGIC ---
+      let allPaymentRecords = [];
+
+      async function openPaymentRecordsModal() {
+        if (currentUser.role !== 'Admin') {
+          showSuccessModal('Access Denied. Admins only.', true);
+          return;
+        }
+
+        const modal = document.getElementById('payment-records-modal');
+        const tbody = document.getElementById('payment-records-body');
+        const searchInput = document.getElementById('payment-records-search');
+
+        // Reset search
+        if (searchInput) searchInput.value = '';
+
+        // Show loading
+        tbody.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-gray-400">
+          <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+          <p>Loading payment records...</p>
+        </td></tr>`;
+
+        modal.classList.remove('hidden');
+
+        try {
+          const res = await fetch('/api/payment-records');
+          if (res.ok) {
+            allPaymentRecords = await res.json();
+            renderPaymentRecords(allPaymentRecords);
+          } else {
+            tbody.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-red-500">
+              <i class="fas fa-exclamation-circle text-2xl mb-2"></i>
+              <p>Error loading payment records.</p>
+            </td></tr>`;
+          }
+        } catch (e) {
+          console.error('Error fetching payment records:', e);
+          tbody.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-red-500">
+            <i class="fas fa-exclamation-circle text-2xl mb-2"></i>
+            <p>Network error. Please try again.</p>
+          </td></tr>`;
+        }
+      }
+
+      function renderPaymentRecords(records) {
+        const tbody = document.getElementById('payment-records-body');
+        const countEl = document.getElementById('payment-records-count');
+        const totalEl = document.getElementById('payment-records-total');
+
+        if (records.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="7" class="p-8 text-center text-gray-400">
+            <i class="fas fa-inbox text-3xl mb-2"></i>
+            <p>No payment records found.</p>
+          </td></tr>`;
+          countEl.textContent = '0';
+          totalEl.textContent = 'PKR 0';
+          return;
+        }
+
+        let totalAmount = 0;
+        let html = '';
+
+        records.forEach((record, index) => {
+          totalAmount += record.amount || 0;
+          const modeClass =
+            record.payment_method === 'Online'
+              ? 'bg-purple-100 text-purple-700'
+              : 'bg-emerald-100 text-emerald-700';
+
+          const screenshotBtn = record.screenshot
+            ? `<button onclick="showPaymentScreenshot('${record._id}')" class="text-emerald-600 hover:text-emerald-800" title="View Screenshot">
+                <i class="fas fa-image"></i>
+               </button>`
+            : '<span class="text-gray-300">-</span>';
+
+          html += `
+            <tr class="hover:bg-emerald-50 transition">
+              <td class="px-4 py-3 text-gray-600">${index + 1}</td>
+              <td class="px-4 py-3 font-semibold text-gray-800">${escapeHtml(
+                record.patient_name
+              )}</td>
+              <td class="px-4 py-3 font-mono font-bold text-emerald-600">${(
+                record.amount || 0
+              ).toLocaleString()}</td>
+              <td class="px-4 py-3 text-gray-600">${formatDate(record.date)}</td>
+              <td class="px-4 py-3">
+                <span class="px-2 py-1 rounded-full text-xs font-semibold ${modeClass}">${
+            record.payment_method
+          }</span>
+              </td>
+              <td class="px-4 py-3 text-gray-600">${escapeHtml(record.recorded_by)}</td>
+              <td class="px-4 py-3 text-center">${screenshotBtn}</td>
+            </tr>
+          `;
+        });
+
+        tbody.innerHTML = html;
+        countEl.textContent = records.length;
+        totalEl.textContent = `PKR ${totalAmount.toLocaleString()}`;
+      }
+
+      function filterPaymentRecords() {
+        const searchTerm = document
+          .getElementById('payment-records-search')
+          .value.toLowerCase()
+          .trim();
+
+        if (!searchTerm) {
+          renderPaymentRecords(allPaymentRecords);
+          return;
+        }
+
+        const filtered = allPaymentRecords.filter((record) =>
+          record.patient_name.toLowerCase().includes(searchTerm)
+        );
+        renderPaymentRecords(filtered);
+      }
+
+      function showPaymentScreenshot(recordId) {
+        const record = allPaymentRecords.find((r) => r._id === recordId);
+        if (record && record.screenshot) {
+          const previewModal = document.getElementById('screenshot-preview-modal');
+          const previewImg = document.getElementById('screenshot-preview-img');
+          previewImg.src = record.screenshot;
+          previewModal.classList.remove('hidden');
+        }
+      }
+
+      function formatDate(dateStr) {
+        if (!dateStr || dateStr === 'N/A') return 'N/A';
+        try {
+          const date = new Date(dateStr);
+          return date.toLocaleDateString('en-PK', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric',
+          });
+        } catch (e) {
+          return dateStr;
+        }
+      }
+
       // --- DAILY REPORT LOGIC ---
 
       // --- DAILY REPORT LOGIC (UPDATED) ---
@@ -3304,7 +3493,7 @@
 
         // 2. Optimistic UI Update (Update button immediately)
         // Update Class
-        btnElement.className = `w-full h-8 rounded flex items-center justify-center transition-all ${getStatusClass(
+        btnElement.className = `w-full h-6 rounded flex items-center justify-center transition-all text-xs ${getStatusClass(
           nextStatus
         )}`;
         // Update Icon
@@ -3367,11 +3556,11 @@
         // Build Headers
         const headerBaseClasses =
           type === 'day'
-            ? 'px-4 py-3 text-left whitespace-nowrap sticky left-0 z-20 shadow-md bg-emerald-600 text-white'
-            : 'px-4 py-3 text-left whitespace-nowrap sticky left-0 z-20 shadow-md bg-indigo-900 text-white';
+            ? 'px-2 py-2 text-left whitespace-nowrap sticky left-0 z-20 shadow-md bg-emerald-600 text-white'
+            : 'px-2 py-2 text-left whitespace-nowrap sticky left-0 z-20 shadow-md bg-indigo-900 text-white';
 
-        let headersHtml = `<th id="${type}-patient-header" class="${headerBaseClasses}" style="min-width: 180px;">
-                              <span class="patient-header-label font-semibold tracking-wide text-sm" style="transition: opacity 0.15s ease;">Patient Name</span>
+        let headersHtml = `<th id="${type}-patient-header" class="${headerBaseClasses}" style="min-width: 100px; max-width: 140px;">
+                              <span class="patient-header-label font-semibold tracking-wide text-xs" style="transition: opacity 0.15s ease;">Patient</span>
                            </th>`;
         columns.forEach((col, index) => {
           const meta = COLUMN_ACTIVITY_MAP[col.key];
@@ -3384,12 +3573,12 @@
           const titleText = meta ? `${meta.time} • ${meta.activity}` : col.label || '';
           const titleAttr = titleText ? `title="${escapeHtml(titleText)}"` : '';
           const headerContent = meta
-            ? `<div class="text-[0.75rem] md:text-sm font-semibold tracking-wide uppercase text-white leading-tight">${meta.time}</div>
-               <div class="text-[0.6rem] font-semibold ${accentClass} uppercase mt-0.5 leading-tight">${meta.activity}</div>`
-            : `<span>${escapeHtml(col.label || '')}</span>`;
+            ? `<div class="text-[0.6rem] font-semibold tracking-tight uppercase text-white leading-tight">${meta.time}</div>
+               <div class="text-[0.5rem] font-semibold ${accentClass} uppercase leading-tight">${meta.activity}</div>`
+            : `<span class="text-[0.6rem]">${escapeHtml(col.label || '')}</span>`;
 
           headersHtml += `<th ${editableAttr} data-idx="${index}" ${titleAttr} ${blurAttr}
-                class="px-2 py-3 text-center whitespace-nowrap text-xs font-semibold min-w-[70px] border-l border-white/20 ${cursorClass}">
+                class="px-1 py-2 text-center whitespace-nowrap text-[0.65rem] font-semibold min-w-[45px] max-w-[60px] border-l border-white/20 ${cursorClass}">
                 ${headerContent}
             </th>`;
         });
@@ -3418,12 +3607,12 @@
 
           const rowBaseClasses =
             type === 'day'
-              ? 'px-4 py-2 font-bold text-emerald-900 bg-emerald-50'
-              : 'px-4 py-2 font-bold text-indigo-900 bg-indigo-50';
+              ? 'px-2 py-1 font-bold text-emerald-900 bg-emerald-50'
+              : 'px-2 py-1 font-bold text-indigo-900 bg-indigo-50';
 
-          let rowHtml = `<td class="${rowBaseClasses} sticky left-0 border-r z-20 whitespace-nowrap text-xs md:text-sm max-w-[220px]" style="min-width: 180px;"><span class="block truncate">${escapeHtml(
+          let rowHtml = `<td class="${rowBaseClasses} sticky left-0 border-r z-20 whitespace-nowrap text-[0.65rem] max-w-[140px]" style="min-width: 100px;"><span class="block truncate" title="${escapeHtml(
             p.name || ''
-          )}</span></td>`;
+          )}">${escapeHtml(p.name || '')}</span></td>`;
 
           columns.forEach((col) => {
             const status = schedules[col.key];
@@ -3432,11 +3621,11 @@
             const icon = getStatusIcon(status);
             const statusLabel = statusLabelMap[status] || 'No Status';
             rowHtml += `
-                  <td class="p-1 border text-center align-middle">
+                  <td class="p-0.5 border text-center align-middle">
                       <button onclick="cycleReportStatus(this, '${pId}', '${col.key}', '${
               status || ''
             }')" 
-                              class="w-full h-8 rounded flex items-center justify-center transition-all ${cellClass}"
+                              class="w-full h-6 rounded flex items-center justify-center transition-all text-xs ${cellClass}"
                               data-status="${status || ''}"
                               data-patient="${pId}"
                               data-slot="${col.key}"
@@ -3917,13 +4106,19 @@
           </div>
           <div class="text-right">
             <div
-              class="mb-6 bg-white p-4 rounded-xl shadow-sm border border-emerald-100 flex justify-between items-center"
+              class="mb-6 bg-white p-4 rounded-xl shadow-sm border border-emerald-100 flex justify-between items-center gap-3"
             >
               <button
                 onclick="openReceiptModal()"
                 class="bg-emerald-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-emerald-700 transition shadow flex items-center gap-2"
               >
                 <i class="fas fa-receipt"></i> Generate Receipt
+              </button>
+              <button
+                onclick="openPaymentRecordsModal()"
+                class="bg-emerald-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-emerald-700 transition shadow flex items-center gap-2"
+              >
+                <i class="fas fa-list-alt"></i> Payment Records
               </button>
             </div>
             <div class="text-lg font-semibold text-green-900" id="current-date"></div>
@@ -4032,14 +4227,17 @@
               </h4>
             </div>
             <div class="bg-white rounded-xl shadow-lg border border-emerald-100 overflow-hidden">
-              <div class="overflow-x-auto">
-                <table class="min-w-full divide-y divide-emerald-100 relative">
+              <div class="w-full">
+                <table
+                  class="w-full divide-y divide-emerald-100 relative"
+                  style="table-layout: fixed"
+                >
                   <thead class="bg-emerald-600 text-white">
                     <tr id="day-header-row"></tr>
                   </thead>
                   <tbody
                     id="day-table-body"
-                    class="divide-y divide-emerald-50 bg-white text-sm"
+                    class="divide-y divide-emerald-50 bg-white text-xs"
                   ></tbody>
                 </table>
               </div>
@@ -4053,14 +4251,17 @@
               </h4>
             </div>
             <div class="bg-white rounded-xl shadow-lg border border-indigo-100 overflow-hidden">
-              <div class="overflow-x-auto">
-                <table class="min-w-full divide-y divide-emerald-100 relative">
+              <div class="w-full">
+                <table
+                  class="w-full divide-y divide-indigo-100 relative"
+                  style="table-layout: fixed"
+                >
                   <thead class="bg-indigo-900 text-white">
                     <tr id="night-header-row"></tr>
                   </thead>
                   <tbody
                     id="night-table-body"
-                    class="divide-y divide-emerald-50 bg-white text-sm"
+                    class="divide-y divide-indigo-50 bg-white text-xs"
                   ></tbody>
                 </table>
               </div>
@@ -6255,6 +6456,101 @@
           <p>Thank you for your payment.</p>
           <p>Pakistan Recovery Oasis - Addiction Treatment & Psychological Services</p>
         </div>
+      </div>
+    </div>
+
+    <!-- Payment Records Modal -->
+    <div
+      id="payment-records-modal"
+      class="fixed inset-0 bg-gray-900 bg-opacity-50 hidden flex items-center justify-center z-50"
+    >
+      <div
+        class="bg-white rounded-xl shadow-2xl w-full max-w-5xl mx-4 max-h-[90vh] flex flex-col border border-emerald-100"
+      >
+        <div class="flex justify-between items-center p-6 border-b border-emerald-100">
+          <h3 class="text-xl font-bold text-green-900">
+            <i class="fas fa-file-invoice-dollar mr-2 text-emerald-600"></i>Payment Records
+          </h3>
+          <button
+            onclick="document.getElementById('payment-records-modal').classList.add('hidden')"
+            class="text-gray-400 hover:text-gray-600"
+          >
+            <i class="fas fa-times text-xl"></i>
+          </button>
+        </div>
+
+        <div class="p-6 overflow-y-auto flex-1">
+          <div class="mb-4 flex flex-wrap gap-4 items-center justify-between">
+            <div class="flex items-center gap-2">
+              <input
+                type="text"
+                id="payment-records-search"
+                placeholder="Search by patient name..."
+                oninput="filterPaymentRecords()"
+                class="border border-emerald-200 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-emerald-500 w-64"
+              />
+            </div>
+            <div class="text-sm text-gray-600">
+              Total Records:
+              <span id="payment-records-count" class="font-bold text-emerald-600">0</span>
+            </div>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-emerald-100">
+              <thead class="bg-emerald-600 text-white">
+                <tr>
+                  <th class="px-4 py-3 text-left text-sm font-semibold">#</th>
+                  <th class="px-4 py-3 text-left text-sm font-semibold">Patient Name</th>
+                  <th class="px-4 py-3 text-left text-sm font-semibold">Amount (PKR)</th>
+                  <th class="px-4 py-3 text-left text-sm font-semibold">Date</th>
+                  <th class="px-4 py-3 text-left text-sm font-semibold">Payment Mode</th>
+                  <th class="px-4 py-3 text-left text-sm font-semibold">Recorded By</th>
+                  <th class="px-4 py-3 text-center text-sm font-semibold">Proof</th>
+                </tr>
+              </thead>
+              <tbody id="payment-records-body" class="divide-y divide-emerald-50 bg-white text-sm">
+                <tr>
+                  <td colspan="7" class="p-8 text-center text-gray-400">
+                    <i class="fas fa-spinner fa-spin text-2xl mb-2"></i>
+                    <p>Loading payment records...</p>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="p-4 border-t border-emerald-100 bg-emerald-50 rounded-b-xl">
+          <div class="flex justify-between items-center">
+            <div class="text-sm text-gray-600">
+              Total Amount:
+              <span id="payment-records-total" class="font-bold text-emerald-600">PKR 0</span>
+            </div>
+            <button
+              onclick="document.getElementById('payment-records-modal').classList.add('hidden')"
+              class="bg-emerald-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-emerald-700 transition"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Screenshot Preview Modal -->
+    <div
+      id="screenshot-preview-modal"
+      class="fixed inset-0 bg-gray-900 bg-opacity-80 hidden flex items-center justify-center z-[60]"
+      onclick="this.classList.add('hidden')"
+    >
+      <div class="bg-white p-4 rounded-xl shadow-2xl max-w-3xl max-h-[90vh] overflow-auto">
+        <img
+          id="screenshot-preview-img"
+          src=""
+          alt="Payment Screenshot"
+          class="max-w-full h-auto"
+        />
       </div>
     </div>
   </body>

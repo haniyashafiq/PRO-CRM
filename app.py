@@ -1172,6 +1172,43 @@ def delete_employee(id):
         return jsonify({"error": str(e)}), 500
 
 
+@app.route('/api/payment-records', methods=['GET'])
+@role_required(['Admin'])
+def get_payment_records():
+    """Fetch all payment records (receipts) from expenses collection."""
+    if not check_db(): return jsonify({"error": "Database error"}), 500
+    try:
+        # Fetch all incoming payments from Patient Fee category
+        payments = list(mongo.db.expenses.find({
+            'type': 'incoming',
+            'category': 'Patient Fee'
+        }).sort('date', -1))  # Most recent first
+        
+        # Process and format the records
+        records = []
+        for p in payments:
+            # Extract patient name from note
+            note = p.get('note', '')
+            patient_name = 'Unknown'
+            if 'Partial payment from ' in note:
+                patient_name = note.split('Partial payment from ')[1].split(' via ')[0]
+            
+            records.append({
+                '_id': str(p['_id']),
+                'patient_name': patient_name,
+                'amount': p.get('amount', 0),
+                'date': p.get('date').strftime('%Y-%m-%d') if p.get('date') else 'N/A',
+                'payment_method': p.get('payment_method', 'Cash'),
+                'recorded_by': p.get('recorded_by', 'Admin'),
+                'screenshot': p.get('screenshot', '')
+            })
+        
+        return jsonify(records)
+    except Exception as e:
+        print(f"Payment Records Error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route('/api/patients/<id>/payment', methods=['POST'])
 @role_required(['Admin'])
 def add_patient_payment(id):
