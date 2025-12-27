@@ -326,6 +326,31 @@
           page-break-before: auto;
         }
 
+        /* Attendance-only print mode */
+        .attendance-print-container {
+          display: none;
+        }
+
+        body.print-attendance > *:not(.attendance-print-container) {
+          display: none !important;
+        }
+
+        body.print-attendance .attendance-print-container {
+          display: block !important;
+          position: absolute;
+          left: 0;
+          top: 0;
+          width: 100%;
+          background: white;
+          padding: 0 12px;
+          visibility: visible !important;
+          z-index: 9999;
+        }
+
+        body.print-attendance .attendance-print-container * {
+          visibility: visible !important;
+        }
+
         /* 7. TABLE STYLING FIXES FOR PRINT */
         /* Expand container to show full width */
         .overflow-x-auto {
@@ -2948,10 +2973,11 @@
 
           const activePatients = patientsData.filter((p) => !p.isDischarged);
           receiptPatientOptions = activePatients.map((p) => {
-            const idInfo = p.idNo ? `ID: ${p.idNo}` : `Contact: ${p.contactNo || 'N/A'}`;
+            const idInfo = p.idNo ? `ID: ${p.idNo}` : '';
+            const fatherInfo = p.fatherName || 'Father N/A';
             return {
               id: p._id || p.id,
-              label: `${p.name} - ${idInfo}`,
+              label: `${p.name} - Father: ${fatherInfo}${idInfo ? ' (' + idInfo + ')' : ''}`,
               name: p.name,
               father: p.fatherName || '',
             };
@@ -3264,6 +3290,32 @@
           const previewImg = document.getElementById('screenshot-preview-img');
           previewImg.src = record.screenshot;
           previewModal.classList.remove('hidden');
+        }
+      }
+
+      async function exportPaymentRecords(range) {
+        try {
+          const res = await fetch(`/api/payment-records/export?range=${range}`);
+          if (!res.ok) {
+            showSuccessModal('Export failed. Please try again.', true);
+            return;
+          }
+
+          const blob = await res.blob();
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download =
+            range === 'six_months'
+              ? 'payment_records_last_6_months.xlsx'
+              : 'payment_records_this_month.xlsx';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          window.URL.revokeObjectURL(url);
+        } catch (e) {
+          console.error('Export error', e);
+          showSuccessModal('Export failed. Please try again.', true);
         }
       }
 
@@ -4991,6 +5043,32 @@
             </div>
           </div>
         </div>
+        <!-- ================= ATTENDANCE SECTION ================= -->
+        <div id="attendance-section" class="mt-10">
+          <div class="flex flex-wrap items-center gap-3 mb-3">
+            <h3 class="text-lg font-bold">Monthly Attendance</h3>
+            <label class="text-sm font-semibold text-gray-700 flex items-center gap-2">
+              Month
+              <input id="attendance-month" type="month" class="border rounded px-2 py-1 text-sm" />
+            </label>
+            <button
+              id="attendance-print-btn"
+              class="ml-auto bg-emerald-600 text-white px-3 py-2 rounded shadow-sm hover:bg-emerald-700"
+              type="button"
+            >
+              <i class="fas fa-print mr-2"></i>Print
+            </button>
+          </div>
+
+          <div class="overflow-x-auto border rounded-lg bg-white">
+            <table class="min-w-max border-collapse text-sm">
+              <thead>
+                <tr id="attendance-header-row"></tr>
+              </thead>
+              <tbody id="attendance-table-body"></tbody>
+            </table>
+          </div>
+        </div>
 
         <div>
           <div class="flex justify-between items-center mb-4">
@@ -6471,12 +6549,31 @@
           <h3 class="text-xl font-bold text-green-900">
             <i class="fas fa-file-invoice-dollar mr-2 text-emerald-600"></i>Payment Records
           </h3>
-          <button
-            onclick="document.getElementById('payment-records-modal').classList.add('hidden')"
-            class="text-gray-400 hover:text-gray-600"
-          >
-            <i class="fas fa-times text-xl"></i>
-          </button>
+          <div class="flex items-center gap-3">
+            <button
+              onclick="exportPaymentRecords('six_months')"
+              class="flex items-center gap-2 bg-emerald-100 text-emerald-700 px-3 py-2 rounded-lg text-sm font-semibold hover:bg-emerald-200"
+              type="button"
+            >
+              <i class="fas fa-file-excel"></i>
+              Last 6 Months
+            </button>
+            <button
+              onclick="exportPaymentRecords('current')"
+              class="flex items-center gap-2 bg-emerald-600 text-white px-3 py-2 rounded-lg text-sm font-semibold hover:bg-emerald-700"
+              type="button"
+            >
+              <i class="fas fa-file-export"></i>
+              This Month
+            </button>
+            <button
+              onclick="document.getElementById('payment-records-modal').classList.add('hidden')"
+              class="text-gray-400 hover:text-gray-600"
+              type="button"
+            >
+              <i class="fas fa-times text-xl"></i>
+            </button>
+          </div>
         </div>
 
         <div class="p-6 overflow-y-auto flex-1">
@@ -6553,5 +6650,146 @@
         />
       </div>
     </div>
+    <script>
+      async function renderAttendanceTable(targetMonthValue) {
+        const headerRow = document.getElementById('attendance-header-row');
+        const tbody = document.getElementById('attendance-table-body');
+        const monthInput = document.getElementById('attendance-month');
+
+        if (!headerRow || !tbody) return;
+
+        const baseDate = (() => {
+          if (targetMonthValue) return new Date(`${targetMonthValue}-01`);
+          if (monthInput?.value) return new Date(`${monthInput.value}-01`);
+          return new Date();
+        })();
+
+        const year = baseDate.getFullYear();
+        const month = baseDate.getMonth();
+        const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+        if (monthInput && !monthInput.value) {
+          monthInput.value = `${year}-${String(month + 1).padStart(2, '0')}`;
+        }
+
+        // Fetch employees
+        let employees = [];
+        try {
+          const res = await fetch('/api/employees');
+          if (res.ok) employees = await res.json();
+        } catch (e) {
+          console.error('Employee fetch failed', e);
+        }
+
+        // Fetch attendance
+        let attendance = {};
+        try {
+          const res = await fetch(`/api/attendance?year=${year}&month=${month + 1}`);
+          if (res.ok) attendance = await res.json();
+        } catch (e) {
+          console.error('Attendance fetch failed', e);
+        }
+
+        // Header
+        let headerHTML = `
+    <th class="sticky left-0 bg-emerald-600 text-white px-4 py-2">Employee</th>
+  `;
+        for (let d = 1; d <= daysInMonth; d++) {
+          headerHTML += `<th class="px-2 py-1 text-center">${d}</th>`;
+        }
+        headerRow.innerHTML = headerHTML;
+
+        // Body
+        tbody.innerHTML = '';
+        employees.forEach((emp) => {
+          const tr = document.createElement('tr');
+          tr.className = 'hover:bg-gray-50';
+
+          let rowHTML = `
+      <td class="sticky left-0 bg-gray-100 px-3 py-2 font-semibold">
+        ${emp.name}
+      </td>
+    `;
+
+          for (let d = 1; d <= daysInMonth; d++) {
+            const mark = attendance[emp.id]?.[String(d)] || '';
+            const color = mark === 'P' ? 'bg-green-200' : mark === 'A' ? 'bg-red-200' : '';
+
+            rowHTML += `
+        <td class="border text-center cursor-pointer ${color}"
+            data-emp="${emp.id}" data-day="${d}">
+          ${mark === 'P' ? '✔️' : mark === 'A' ? '❌' : ''}
+        </td>
+      `;
+          }
+
+          tr.innerHTML = rowHTML;
+          tbody.appendChild(tr);
+        });
+
+        // Click handler
+        tbody.querySelectorAll('td[data-emp]').forEach((cell) => {
+          cell.onclick = async () => {
+            const empId = cell.dataset.emp;
+            const day = cell.dataset.day;
+
+            let current = cell.textContent.trim();
+            let mark = current === '' ? 'P' : current === '✔️' ? 'A' : '';
+
+            cell.textContent = mark === 'P' ? '✔️' : mark === 'A' ? '❌' : '';
+            cell.classList.toggle('bg-green-200', mark === 'P');
+            cell.classList.toggle('bg-red-200', mark === 'A');
+
+            await fetch('/api/attendance', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ empId, day, year, month: month + 1, mark }),
+            });
+          };
+        });
+      }
+      document.addEventListener('DOMContentLoaded', () => {
+        const monthInput = document.getElementById('attendance-month');
+        const printBtn = document.getElementById('attendance-print-btn');
+
+        if (monthInput && !monthInput.value) {
+          const today = new Date();
+          monthInput.value = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(
+            2,
+            '0'
+          )}`;
+        }
+
+        if (monthInput) {
+          monthInput.addEventListener('change', () => renderAttendanceTable(monthInput.value));
+        }
+
+        if (printBtn) {
+          printBtn.addEventListener('click', async () => {
+            const targetMonth = monthInput ? monthInput.value : undefined;
+            await renderAttendanceTable(targetMonth); // ensure latest month is rendered before print
+
+            const section = document.getElementById('attendance-section');
+            const clone = section ? section.cloneNode(true) : null;
+
+            if (clone) {
+              clone.id = 'attendance-print-clone';
+              clone.classList.add('attendance-print-container');
+              document.body.appendChild(clone);
+            }
+
+            document.body.classList.add('print-attendance');
+            window.print();
+
+            setTimeout(() => {
+              document.body.classList.remove('print-attendance');
+              if (clone) clone.remove();
+            }, 300);
+          });
+        }
+
+        renderAttendanceTable(monthInput ? monthInput.value : undefined);
+      });
+    </script>
   </body>
 </html>
