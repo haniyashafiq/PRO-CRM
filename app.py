@@ -1510,6 +1510,7 @@ def list_psych_sessions():
                 'patient_names': [patient_map.get(pid, 'Unknown') for pid in s.get('patient_ids', [])],
                 'title': s.get('title', ''),
                 'note': s.get('note', ''),
+                'note_detail': s.get('note_detail'),
                 'note_author': s.get('note_author', ''),
                 'note_at': s.get('note_at').isoformat() if s.get('note_at') else None
             })
@@ -1569,8 +1570,17 @@ def add_psych_session_note(session_id):
 
     data = clean_input_data(request.json)
     note_text = data.get('note', '').strip()
-    if not note_text:
-        return jsonify({"error": "Note is required"}), 400
+    note_issue = data.get('issue', '').strip()
+    note_intervention = data.get('intervention', '').strip()
+    note_response = data.get('response', '').strip()
+
+    # Require the structured fields; keep legacy fallback if only note provided
+    if not (note_issue and note_intervention and note_response):
+        if not note_text:
+            return jsonify({"error": "Issue, intervention, and response are required"}), 400
+    else:
+        # Compose a legacy note string for compatibility
+        note_text = f"Issue: {note_issue}\nIntervention: {note_intervention}\nResponse: {note_response}"
 
     try:
         session_doc = mongo.db.psych_sessions.find_one({'_id': ObjectId(session_id)})
@@ -1584,6 +1594,11 @@ def add_psych_session_note(session_id):
             {'_id': ObjectId(session_id)},
             {'$set': {
                 'note': note_text,
+                'note_detail': {
+                    'issue': note_issue,
+                    'intervention': note_intervention,
+                    'response': note_response
+                } if note_issue and note_intervention and note_response else None,
                 'note_author': session.get('username'),
                 'note_at': datetime.now()
             }}
