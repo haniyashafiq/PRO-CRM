@@ -889,10 +889,13 @@
           });
           const data = await res.json();
           if (res.ok) {
-            showSuccessModal(data.message || 'If the account exists, a reset email has been sent.');
+            showSuccessModal(data.message || 'Reset email sent to your registered address.');
             window.closeForgotPasswordModal();
           } else {
-            showSuccessModal(data.error || 'Could not start password reset.', true);
+            showSuccessModal(
+              data.error || 'Could not start password reset. Check username/email.',
+              true
+            );
           }
         } catch (err) {
           console.error(err);

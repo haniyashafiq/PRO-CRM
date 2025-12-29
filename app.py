@@ -182,19 +182,22 @@ def forgot_password():
         return jsonify({"error": "Email service not configured"}), 500
 
     user = mongo.db.users.find_one({"username": username})
-    generic_response = {"message": "If the account exists, a reset email has been sent."}
-
     if not user:
-        return jsonify(generic_response)
+        return jsonify({"error": "No account found for that username."}), 404
 
     registered_email = normalize_email(user.get('email'))
-    if not registered_email or registered_email != email:
-        return jsonify(generic_response)
+    if not registered_email:
+        return jsonify({"error": "No email is set for this account. Contact an admin."}), 400
+
+    if registered_email != email:
+        return jsonify({"error": "Username and email do not match our records."}), 400
 
     token = serializer.dumps({"user_id": str(user['_id']), "email": registered_email}, salt="password-reset")
-    send_password_reset_email(registered_email, user.get('name', user['username']), token)
+    sent = send_password_reset_email(registered_email, user.get('name', user['username']), token)
+    if not sent:
+        return jsonify({"error": "Could not send reset email. Please try again or contact support."}), 500
 
-    return jsonify(generic_response)
+    return jsonify({"message": "Reset email sent to your registered address."})
 
 
 @app.route('/api/auth/reset', methods=['POST'])
