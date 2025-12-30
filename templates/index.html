@@ -10,6 +10,23 @@
       href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css"
     />
     <style>
+      /* FORCE HIDE MODALS BY DEFAULT & ON PRINT */
+      #success-modal, #confirm-modal, #emergency-modal {
+          display: none; /* Default state */
+      }
+      #success-modal:not(.hidden), 
+      #confirm-modal:not(.hidden), 
+      #emergency-modal:not(.hidden) {
+          display: flex; /* Only show when 'hidden' class is removed */
+      }
+
+      @media print {
+          /* Critical: Hide all modals during print */
+          #success-modal, #confirm-modal, #emergency-modal, .fixed {
+              display: none !important;
+          }
+      }
+      
       @import url('https://fonts.googleapis.com/css2?family=Noto+Nastaliq+Urdu:wght@400;700&family=Manrope:wght@500;600;700&family=DM+Sans:wght@400;500;600;700&display=swap');
 
       :root {
@@ -2212,19 +2229,18 @@
           tbody.innerHTML = '';
 
           accountsData.forEach((p) => {
-            // 2. PARSE VALUES
-            const fee = parseInt(p.monthlyFee.toString().replace(/,/g, '')) || 0;
-            const received = parseInt(p.receivedAmount.toString().replace(/,/g, '')) || 0;
-            const canteen = p.canteenTotal || 0;
-            const laundry = p.laundryAmount || 0;
+            // 2. PARSE VALUES (The Fix: Force everything to Number)
+            // We use String() first to handle null/undefined safely, then remove commas, then parse.
+            const fee = Number(String(p.monthlyFee).replace(/,/g, '')) || 0;
+            const received = Number(String(p.receivedAmount).replace(/,/g, '')) || 0;
+            const canteen = Number(String(p.canteenTotal).replace(/,/g, '')) || 0;
+            const laundry = Number(String(p.laundryAmount).replace(/,/g, '')) || 0;
 
-            // 3. CALCULATE TOTALS
+            // 3. CALCULATE TOTALS (Now guaranteed to be math addition)
             const totalBill = fee + canteen + laundry;
             const balanceDue = totalBill - received;
 
             // 4. STYLING
-            // We add 'discharged-row' class if discharged.
-            // The CSS we added in Step 1 will handle the color.
             const rowClass = p.isDischarged
               ? 'discharged-row border-gray-100'
               : 'hover:bg-gray-50 transition';
@@ -2254,9 +2270,7 @@
             <td class="px-6 py-4 whitespace-nowrap">
                 <div class="font-bold">${formatCurrency(totalBill)}</div>
                 <div class="text-xs opacity-70">
-                    (Fee: ${formatNumber(fee)} + Cant: ${formatNumber(
-              canteen
-            )} + Lnd: ${formatNumber(laundry)})
+                    (Fee: ${formatNumber(fee)} + Cant: ${formatNumber(canteen)} + Lnd: ${formatNumber(laundry)})
                 </div>
             </td>
 
@@ -2281,63 +2295,122 @@
           console.error(e);
         }
       }
-      window.printDischargeSlip = function (id) {
-        let p = accountsData?.find((x) => x.id === id);
-
-        // Fallback to patients list if not present in accounts summary
-        if (!p && Array.isArray(patientsData)) {
-          const candidate = patientsData.find((x) => (x._id || x.id) === id);
-          if (candidate) {
+      
+    window.printDischargeSlip = async function (id) {
+    // 1. Locate Patient Data
+    let p = accountsData?.find((x) => (x._id || x.id) === id);
+    // Fallback search if not in accountsData
+    if (!p && Array.isArray(patientsData)) {
+        const candidate = patientsData.find((x) => (x._id || x.id) === id);
+        if (candidate) {
             p = {
-              id: candidate._id || candidate.id,
-              name: candidate.name,
-              fatherName: candidate.fatherName,
-              admissionDate: candidate.admissionDate,
-              age: candidate.age,
-              area: candidate.address,
+               id: candidate._id || candidate.id,
+               name: candidate.name,
+               fatherName: candidate.fatherName,
+               admissionDate: candidate.admissionDate,
+               monthlyFee: candidate.monthlyFee,
+               laundryAmount: candidate.laundryAmount,
+               canteenTotal: 0, 
+               cnic: candidate.cnic
             };
-          }
         }
+    }
+    if (!p) { showSuccessModal('Patient data not found.', true); return; }
 
-        if (!p) return;
+    // 2. Fetch Payment History from Backend
+    let paymentHistory = [];
+    try {
+        const res = await fetch(`/api/patients/${id}/payment_history`);
+        if(res.ok) paymentHistory = await res.json();
+    } catch(e) { console.error("History fetch error", e); }
 
-        // Helper function to format currency
-        const formatCurr = (amount) => {
-          if (!amount) return 'PKR 0';
-          const num = parseInt(amount) || 0;
-          return `PKR ${num.toLocaleString('en-US')}`;
-        };
+    // 3. Formatters
+    const fmt = (n) => new Intl.NumberFormat('en-PK').format(Number(String(n).replace(/,/g,'')) || 0);
+    const parse = (n) => Number(String(n).replace(/,/g,'')) || 0;
 
-        // Populate header
-        document.getElementById('ds-name').textContent = p.name || '';
-        document.getElementById('ds-father').textContent = p.fatherName || '';
-        document.getElementById('ds-age').textContent = p.age || '';
-        document.getElementById('ds-area').textContent = p.area || '';
-        document.getElementById('ds-admission').textContent = p.admissionDate || '';
+    // 4. Fill Header Info
+    document.getElementById('ds-date-print').innerText = new Date().toLocaleDateString();
+    document.getElementById('ds-name').innerText = p.name || '-';
+    document.getElementById('ds-father').innerText = p.fatherName || '-';
+    document.getElementById('ds-admission').innerText = p.admissionDate || '-';
+    document.getElementById('ds-cnic').innerText = p.cnic || '-';
 
-        // Keep all charges empty - don't display system data
-        document.getElementById('ds-laundry-col1').textContent = '';
-        document.getElementById('ds-laundry-col2').textContent = '';
-        document.getElementById('ds-laundry-col3').textContent = '';
+    // 5. Calculate Charges
+    const fee = parse(p.monthlyFee);
+    const laundry = parse(p.laundryAmount);
+    const canteen = parse(p.canteenTotal);
+    const gross = fee + laundry + canteen;
 
-        document.getElementById('ds-canteen-col1').textContent = '';
-        document.getElementById('ds-canteen-col2').textContent = '';
-        document.getElementById('ds-canteen-col3').textContent = '';
+    document.getElementById('ds-total-fee').innerText = fmt(fee);
+    document.getElementById('ds-total-canteen').innerText = fmt(canteen);
+    document.getElementById('ds-total-laundry').innerText = fmt(laundry);
+    document.getElementById('ds-gross-total').innerText = fmt(gross);
 
-        // Populate total columns (all empty)
-        document.getElementById('ds-total-col1').textContent = '';
-        document.getElementById('ds-total-col2').textContent = '';
-        document.getElementById('ds-total-col3').textContent = '';
+    // 6. Populate Table & Calculate Total Received
+    const historyBody = document.getElementById('ds-payment-history-body');
+    historyBody.innerHTML = '';
+    
+    let calculatedReceived = 0;
 
-        const slip = document.getElementById('printable-discharge-slip');
-        const normal = document.getElementById('printable-area');
-        slip.classList.add('print-active');
-        normal.classList.remove('print-active');
-        window.print();
-        setTimeout(() => slip.classList.remove('print-active'), 500);
-      };
+    if(paymentHistory.length === 0) {
+        // If NO history found, we default to 0 to prevent the "5 million" error.
+        historyBody.innerHTML = '<tr><td colspan="4" class="p-3 text-center text-gray-500 italic text-xs">No payment records found.</td></tr>';
+        calculatedReceived = 0; 
+    } else {
+        paymentHistory.forEach(rec => {
+            const amount = parse(rec.amount);
+            calculatedReceived += amount;
+            
+            const row = document.createElement('tr');
+            row.className = 'border-b hover:bg-gray-50 text-xs';
+            row.innerHTML = `
+                <td class="p-2">${rec.date}</td>
+                <td class="p-2 uppercase font-semibold text-gray-600">${rec.method}</td>
+                <td class="p-2 text-gray-500 truncate max-w-[150px]">${rec.note}</td>
+                <td class="p-2 text-right font-mono">${fmt(amount)}</td>
+            `;
+            historyBody.appendChild(row);
+        });
+    }
 
-      // --- CANTEEN LOGIC ---
+    // 7. Final Balance Calculation
+    const balance = gross - calculatedReceived;
+
+    document.getElementById('ds-total-received').innerText = fmt(calculatedReceived);
+    document.getElementById('ds-net-balance').innerText = `PKR ${fmt(balance)}`;
+    
+    // Balance Styling
+    const balEl = document.getElementById('ds-net-balance');
+    const labelEl = balEl.previousElementSibling;
+    
+    if(balance > 0) {
+        balEl.className = "text-3xl font-mono font-bold text-red-600"; // Debit/Due
+        labelEl.innerText = "NET PAYABLE BALANCE";
+    } else if (balance < 0) {
+        balEl.className = "text-3xl font-mono font-bold text-emerald-600"; // Credit/Surplus
+        labelEl.innerText = "REFUNDABLE BALANCE";
+    } else {
+        balEl.className = "text-3xl font-mono font-bold text-gray-800"; // Cleared
+        labelEl.innerText = "NET BALANCE";
+    }
+
+    // 8. Trigger Print
+    const slip = document.getElementById('printable-discharge-slip');
+    const normal = document.getElementById('printable-area');
+    
+    if(normal) normal.classList.remove('print-active');
+    slip.classList.remove('hidden');
+    slip.classList.add('print-active');
+    
+    window.print();
+
+    setTimeout(() => {
+        slip.classList.remove('print-active');
+        slip.classList.add('hidden');
+    }, 500);
+};
+
+// --- CANTEEN LOGIC ---
       async function renderCanteenBreakdown() {
         try {
           const res = await fetch('/api/canteen/sales/breakdown');
@@ -4211,6 +4284,126 @@
           return '<i class="fas fa-exclamation text-yellow-600 text-sm"></i>';
         return '<span class="text-gray-200 text-xs">•</span>';
       }
+
+      // --- EMERGENCY SECTION LOGIC ---
+async function loadEmergencyAlerts() {
+    try {
+        const res = await fetch('/api/emergency');
+        if (!res.ok) return;
+        const alerts = await res.json();
+        const container = document.getElementById('emergency-list');
+        if(!container) return; // Guard clause
+
+        container.innerHTML = '';
+        if (alerts.length === 0) {
+            container.innerHTML = '<div class="col-span-full text-center text-gray-400 py-2">No active alerts.</div>';
+            return;
+        }
+
+        alerts.forEach(a => {
+            const color = a.severity === 'critical' ? 'bg-red-100 border-red-300 text-red-800' : 'bg-orange-100 border-orange-300 text-orange-800';
+            const icon = a.severity === 'critical' ? 'fa-exclamation-circle' : 'fa-exclamation-triangle';
+            
+            container.innerHTML += `
+                <div class="${color} border rounded p-3 shadow-sm relative animate-pulse-slow">
+                    <button onclick="resolveEmergencyAlert('${a._id}')" class="absolute top-2 right-2 text-gray-500 hover:text-gray-800" title="Resolve"><i class="fas fa-check"></i></button>
+                    <div class="font-bold text-sm"><i class="fas ${icon}"></i> ${a.patient_name}</div>
+                    <div class="text-sm mt-1">${a.note}</div>
+                    <div class="text-xs mt-2 opacity-75">By ${a.added_by} at ${a.date}</div>
+                </div>
+            `;
+        });
+    } catch (e) { console.error(e); }
+}
+
+// --- NEW EMERGENCY LOGIC ---
+
+// 1. Function to open modal and load patients
+async function openEmergencyModal() {
+    const modal = document.getElementById('emergency-modal');
+    const select = document.getElementById('emer-name');
+    
+    modal.classList.remove('hidden');
+    select.innerHTML = '<option value="">Loading...</option>';
+
+    try {
+        // Reuse existing patients data if available, otherwise fetch
+        if (patientsData.length === 0) await fetchPatients();
+        
+        const active = patientsData.filter(p => !p.isDischarged);
+        
+        if (active.length === 0) {
+            select.innerHTML = '<option value="">No active patients found</option>';
+            return;
+        }
+
+        select.innerHTML = active
+            .sort((a, b) => a.name.localeCompare(b.name))
+            .map(p => `<option value="${p.name}">${p.name} (Father: ${p.fatherName || '-'})</option>`)
+            .join('');
+            
+    } catch (e) {
+        console.error("Error loading patients for emergency:", e);
+        select.innerHTML = '<option value="">Error loading list</option>';
+    }
+}
+
+// 2. Fixed Save Function
+async function addEmergencyAlert(e) {
+    e.preventDefault();
+    
+    const nameSelect = document.getElementById('emer-name');
+    const noteInput = document.getElementById('emer-note');
+    const severityInput = document.getElementById('emer-severity');
+
+    // Validation
+    if (!nameSelect.value) {
+        showSuccessModal("Please select a patient.", true);
+        return;
+    }
+
+    const payload = {
+        patient_name: nameSelect.value, // Sends the name string
+        note: noteInput.value,
+        severity: severityInput.value
+    };
+
+    try {
+        const res = await fetch('/api/emergency', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+
+        if (res.ok) {
+            document.getElementById('emergency-modal').classList.add('hidden');
+            // Clear form
+            noteInput.value = ''; 
+            
+            // Reload alerts immediately
+            await loadEmergencyAlerts();
+            showSuccessModal('Emergency Alert Posted');
+        } else {
+            const err = await res.json();
+            showSuccessModal('Error: ' + (err.error || 'Could not save'), true);
+        }
+    } catch (error) {
+        console.error("Save alert error:", error);
+        showSuccessModal('Network error. Please try again.', true);
+    }
+}
+async function resolveEmergencyAlert(id) {
+    if(!await showConfirmModal("Mark this alert as resolved?")) return;
+    await fetch(`/api/emergency/${id}`, { method: 'DELETE' });
+    loadEmergencyAlerts();
+}
+
+// Hook into dashboard update
+const originalUpdateDashboard = window.updateDashboard;
+window.updateDashboard = async function() {
+    if (originalUpdateDashboard) await originalUpdateDashboard();
+    await loadEmergencyAlerts(); // Load alerts when dashboard opens
+};
     </script>
   </head>
 
@@ -4390,6 +4583,46 @@
           </div>
         </div>
 
+        <div class="mb-8 bg-red-50 border-l-4 border-red-500 rounded-r-lg shadow-sm p-6">
+  <div class="flex justify-between items-center mb-4">
+    <h3 class="text-xl font-bold text-red-700 flex items-center">
+      <i class="fas fa-heartbeat animate-pulse mr-2"></i> Emergency / Critical Alerts
+    </h3>
+    <button onclick="openEmergencyModal()" class="bg-red-600 text-white px-4 py-2 rounded font-bold hover:bg-red-700 text-sm">
+  <i class="fas fa-plus mr-1"></i> Add Alert
+</button>
+  </div>
+  
+  <div id="emergency-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+    <div class="text-gray-500 text-sm italic">No active emergencies.</div>
+  </div>
+</div>
+
+<div id="emergency-modal" class="fixed inset-0 bg-black/60 hidden flex items-center justify-center z-[60]">
+  <div class="bg-white p-6 rounded-lg shadow-xl w-full max-w-md">
+    <h3 class="text-lg font-bold text-red-700 mb-4">Report Emergency Condition</h3>
+    <form onsubmit="addEmergencyAlert(event)">
+      <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Select Patient</label>
+      <select id="emer-name" class="w-full border p-2 mb-3 rounded bg-gray-50" required>
+        <option value="">Loading patients...</option>
+      </select>
+
+      <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Condition / Note</label>
+      <textarea id="emer-note" class="w-full border p-2 mb-3 rounded h-24" placeholder="e.g. Low BP 90/60, Chest Pain, High Fever" required></textarea>
+      
+      <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Severity Level</label>
+      <select id="emer-severity" class="w-full border p-2 mb-4 rounded">
+        <option value="critical">Critical (Red)</option>
+        <option value="warning">Warning (Orange)</option>
+      </select>
+      
+      <button type="submit" class="w-full bg-red-600 text-white py-2 rounded font-bold hover:bg-red-700 shadow-md transition transform active:scale-95">
+        Post Alert
+      </button>
+    </form>
+    <button onclick="document.getElementById('emergency-modal').classList.add('hidden')" class="mt-3 w-full text-gray-500 text-sm hover:text-gray-800">Cancel</button>
+  </div>
+</div>
         <div class="flex flex-wrap gap-6 mb-6 w-full">
           <div
             class="kpi-card kpi-accent-shamrock flex-1 min-w-xs cursor-pointer hover:shadow-lg transition-all"
@@ -6360,117 +6593,112 @@
       }
     </script>
 
-    <div id="printable-discharge-slip">
-      <div
-        style="
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          margin-bottom: 20px;
-          gap: 15px;
-          border-bottom: 2px solid #10b981;
-          padding-bottom: 15px;
-        "
-      >
-        <i class="fas fa-brain" style="font-size: 40px; color: #10b981"></i>
-        <div style="text-align: center">
-          <div style="font-size: 24px; font-weight: bold; color: #10b981">PRO</div>
-          <div style="font-size: 14px; font-weight: bold; color: #059669">
-            PAKISTAN RECOVERY OASIS
-          </div>
-          <div style="font-size: 12px; color: #666">
-            Addiction Treatment & Psychological Services
-          </div>
+    <div id="printable-discharge-slip" class="hidden bg-white p-8 max-w-4xl mx-auto text-gray-800">
+    <div class="border-b-4 border-emerald-600 pb-6 mb-6 flex justify-between items-start">
+        <div class="flex items-center gap-4">
+            <i class="fas fa-brain text-5xl text-emerald-700"></i>
+            <div>
+                <h1 class="text-3xl font-bold text-gray-900 tracking-tight">PRO</h1>
+                <h2 class="text-lg font-bold text-emerald-700 tracking-wider">PAKISTAN RECOVERY OASIS</h2>
+                <p class="text-xs text-gray-500 mt-1">Addiction Treatment & Psychological Services</p>
+                <p class="text-xs text-gray-500">Abbottabad, Pakistan</p>
+            </div>
         </div>
-      </div>
-      <div class="discharge-header">
-        <p><strong>Patient Name:</strong> <span id="ds-name"></span></p>
-        <p><strong>Father/Guardian Name:</strong> <span id="ds-father"></span></p>
-        <p><strong>Age:</strong> <span id="ds-age"></span></p>
-        <p><strong>Area:</strong> <span id="ds-area"></span></p>
-        <p><strong>Date of Admission:</strong> <span id="ds-admission"></span></p>
-      </div>
-      <table class="discharge-table">
-        <thead>
-          <tr>
-            <th style="width: 30%; background-color: #f3f3f3">Rehab charges</th>
-            <th style="width: 20%">Month______</th>
-            <th style="width: 20%">Month______</th>
-            <th style="width: 20%">Month______</th>
-            <th style="width: 10%"></th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr style="height: 40px">
-            <td>Laundry</td>
-            <td id="ds-laundry-col1"></td>
-            <td id="ds-laundry-col2"></td>
-            <td id="ds-laundry-col3"></td>
-            <td></td>
-          </tr>
-          <tr style="height: 40px">
-            <td>Barber</td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-          </tr>
-          <tr style="height: 40px">
-            <td>Canteen</td>
-            <td id="ds-canteen-col1"></td>
-            <td id="ds-canteen-col2"></td>
-            <td id="ds-canteen-col3"></td>
-            <td></td>
-          </tr>
-          <tr style="height: 40px">
-            <td>Medicine</td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-          </tr>
-          <tr style="height: 40px">
-            <td>Others</td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-          </tr>
-          <tr style="height: 40px">
-            <td>Discount</td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-          </tr>
-          <tr style="height: 40px; background-color: #f9f9f9">
-            <td><strong>Total</strong></td>
-            <td id="ds-total-col1"></td>
-            <td id="ds-total-col2"></td>
-            <td id="ds-total-col3"></td>
-            <td></td>
-          </tr>
-          <tr style="height: 40px">
-            <td>Received</td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-          </tr>
-          <tr style="height: 40px">
-            <td>Remaining</td>
-            <td></td>
-            <td></td>
-            <td></td>
-            <td></td>
-          </tr>
-        </tbody>
-      </table>
-      <div style="margin-top: 80px; text-align: right; padding-right: 50px">
-        <p style="margin-bottom: 10px">__________________________</p>
-        <p style="font-weight: bold">Signature</p>
-      </div>
+        <div class="text-right">
+            <div class="text-2xl font-bold text-gray-800">DISCHARGE BILL</div>
+            <p class="text-sm text-gray-500 mt-1">Date: <span id="ds-date-print"></span></p>
+        </div>
     </div>
+
+    <div class="bg-gray-50 rounded-lg p-6 mb-8 border border-gray-200">
+        <div class="grid grid-cols-2 gap-y-4 gap-x-8 text-sm">
+            <div class="flex justify-between border-b border-gray-200 pb-1">
+                <span class="font-bold text-gray-600">Patient Name:</span>
+                <span id="ds-name" class="font-semibold text-gray-900"></span>
+            </div>
+            <div class="flex justify-between border-b border-gray-200 pb-1">
+                <span class="font-bold text-gray-600">Father/Guardian:</span>
+                <span id="ds-father" class="font-semibold text-gray-900"></span>
+            </div>
+            <div class="flex justify-between border-b border-gray-200 pb-1">
+                <span class="font-bold text-gray-600">Admission Date:</span>
+                <span id="ds-admission" class="font-semibold text-gray-900"></span>
+            </div>
+            <div class="flex justify-between border-b border-gray-200 pb-1">
+                <span class="font-bold text-gray-600">CNIC / ID:</span>
+                <span id="ds-cnic" class="font-semibold text-gray-900"></span>
+            </div>
+        </div>
+    </div>
+
+    <h3 class="font-bold text-lg text-gray-800 mb-3 border-l-4 border-emerald-500 pl-3">Account Summary</h3>
+    <table class="w-full text-sm border-collapse mb-8">
+        <thead>
+            <tr class="bg-emerald-600 text-white">
+                <th class="p-3 text-left w-1/2">Description</th>
+                <th class="p-3 text-right">Amount (PKR)</th>
+            </tr>
+        </thead>
+        <tbody class="border border-gray-200">
+            <tr class="border-b">
+                <td class="p-3">Monthly Fees (Total Accrued)</td>
+                <td class="p-3 text-right font-mono" id="ds-total-fee">0</td>
+            </tr>
+            <tr class="border-b">
+                <td class="p-3">Canteen & Misc Charges</td>
+                <td class="p-3 text-right font-mono" id="ds-total-canteen">0</td>
+            </tr>
+            <tr class="border-b">
+                <td class="p-3">Laundry / Other Services</td>
+                <td class="p-3 text-right font-mono" id="ds-total-laundry">0</td>
+            </tr>
+            <tr class="bg-gray-100 font-bold text-gray-900">
+                <td class="p-3 text-right">GROSS TOTAL:</td>
+                <td class="p-3 text-right font-mono text-lg" id="ds-gross-total">0</td>
+            </tr>
+        </tbody>
+    </table>
+    <br>
+    <br>
+    <br>
+    <h3 class="font-bold text-lg text-gray-800 mb-3 border-l-4 border-blue-500 pl-3">Payment History (Credits)</h3>
+    <table class="w-full text-sm border-collapse mb-2">
+        <thead>
+            <tr class="bg-gray-800 text-white text-xs uppercase">
+                <th class="p-2 text-left">Date</th>
+                <th class="p-2 text-left">Mode</th>
+                <th class="p-2 text-left">Note</th>
+                <th class="p-2 text-right">Amount Paid</th>
+            </tr>
+        </thead>
+        <tbody id="ds-payment-history-body" class="border border-gray-200">
+            </tbody>
+        <tfoot>
+            <tr class="bg-gray-100 font-bold border-t-2 border-gray-300">
+                <td colspan="3" class="p-3 text-right">TOTAL RECEIVED:</td>
+                <td class="p-3 text-right font-mono text-green-700" id="ds-total-received">0</td>
+            </tr>
+        </tfoot>
+    </table>
+
+    <div class="flex justify-end mt-4 mb-12">
+        <div class="bg-gray-900 text-white p-4 rounded-lg shadow-lg text-center w-64">
+            <div class="text-xs uppercase tracking-widest text-gray-400 mb-1">Net Payable Balance</div>
+            <div class="text-3xl font-mono font-bold" id="ds-net-balance">PKR 0</div>
+        </div>
+    </div>
+
+    <div class="flex justify-between items-end text-center text-sm text-gray-600 mt-20 pt-8 border-t border-gray-300">
+        <div class="w-48">
+            <p class="border-b border-gray-400 mb-2 pb-4"></p>
+            <p class="font-bold">Accountant Signature</p>
+        </div>
+        <div class="w-48">
+            <p class="border-b border-gray-400 mb-2 pb-4"></p>
+            <p class="font-bold">Admin / Authority</p>
+        </div>
+    </div>
+</div>
 
     <div id="printable-area">
       <div class="print-container">
