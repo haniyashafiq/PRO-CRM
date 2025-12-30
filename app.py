@@ -364,37 +364,6 @@ def get_dashboard_metrics():
         
         total_income_this_month = 0
         
-        print("\n--- DEBUGGING OVERHEAD CALCULATION ---")
-        for p in active_patients:
-            try:
-                pid = str(p['_id'])
-                name = p.get('name', 'Unknown')
-                
-                # Helper to safely parse currency strings like "15,000" or ints like 15000
-                def safe_int(val):
-                    if val is None: return 0
-                    return int(str(val).replace(',', '').strip() or 0)
-
-                fee = safe_int(p.get('monthlyFee'))
-                laundry = safe_int(p.get('laundryAmount'))
-                received = safe_int(p.get('receivedAmount'))
-                canteen = canteen_map.get(pid, 0)
-                
-                total_bill = fee + laundry + canteen
-                balance = total_bill - received
-                
-                # Only count positive balances (money they owe us)
-                if balance > 0:
-                    total_income_this_month += balance
-                    print(f"Patient: {name} | Fee: {fee} + Lnd: {laundry} + Cant: {canteen} - Rec: {received} = Bal: {balance}")
-                else:
-                    print(f"Patient: {name} | Balance is 0 or negative ({balance}) - Ignoring")
-
-            except Exception as e:
-                print(f"Error calculating for {p.get('name')}: {e}")
-        
-        print(f"TOTAL EXPECTED INCOMING: {total_income_this_month}")
-        print("--------------------------------------\n")
 
         # 3. Canteen Sales This Month (KPI Card)
         pipeline_month = [
@@ -1467,7 +1436,8 @@ def add_patient_payment(id):
             'category': 'Patient Fee',
             'note': expense_note,
             'payment_method': payment_method,
-            'screenshot': screenshot, # Store proof if available
+            'patient_id': str(id),
+            'screenshot': screenshot,
             'date': datetime.now(),
             'recorded_by': session.get('username', 'Admin'),
             'auto': True
@@ -1791,6 +1761,111 @@ def save_attendance():
 
     return jsonify(success=True)
 
+# --- EMERGENCY DASHBOARD APIs ---
+@app.route('/api/emergency', methods=['GET'])
+@login_required
+def get_emergency_alerts():
+    if not check_db(): return jsonify({"error": "Database error"}), 500
+    try:
+        alerts = list(mongo.db.emergency_alerts.find().sort('created_at', -1))
+        for a in alerts:
+            a['_id'] = str(a['_id'])
+            # Format: 12 Oct, 04:30 PM
+            if a.get('created_at'):
+                a['date'] = a['created_at'].strftime('%d %b, %I:%M %p')
+            else:
+                a['date'] = 'Just now'
+        return jsonify(alerts)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/emergency', methods=['POST'])
+@login_required
+def add_emergency_alert():
+    if not check_db(): return jsonify({"error": "Database error"}), 500
+    try:
+        data = clean_input_data(request.json)
+        alert = {
+            'patient_name': data.get('patient_name', 'Unknown'),
+            'note': data.get('note', ''),
+            'severity': data.get('severity', 'critical'), 
+            'added_by': session.get('username', 'Staff'),
+            'created_at': datetime.now()
+        }
+        mongo.db.emergency_alerts.insert_one(alert)
+        return jsonify({"message": "Alert added"}), 201
+    except Exception as e:
+        print(f"Emergency Save Error: {e}") # Added debug print
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/emergency/<id>', methods=['DELETE'])
+@login_required
+def delete_emergency_alert(id):
+    if not check_db(): return jsonify({"error": "Database error"}), 500
+    try:
+        mongo.db.emergency_alerts.delete_one({'_id': ObjectId(id)})
+        return jsonify({"message": "Alert resolved"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/patients/<id>/payment_history', methods=['GET'])
+@role_required(['Admin'])
+def get_patient_payment_history(id):
+    if not check_db(): return jsonify({"error": "Database error"}), 500
+    try:
+        # 1. Get Patient Details to find the name
+        patient = mongo.db.patients.find_one({'_id': ObjectId(id)})
+        if not patient:
+            return jsonify([])
+
+        target_name = patient.get('name', '').strip().lower()
+        target_id_str = str(id)
+        
+        # 2. Fetch ALL "Patient Fee" expenses (Incoming only)
+        # We fetch all candidates first, then filter in Python for 100% accuracy matching your other API
+        cursor = mongo.db.expenses.find({
+            'type': 'incoming',
+            'category': 'Patient Fee'
+        }).sort('date', 1)
+        
+        history = []
+        
+        for doc in cursor:
+            # --- MATCHING LOGIC ---
+            is_match = False
+            
+            # Check A: Explicit ID Match (if available)
+            doc_p_id = str(doc.get('patient_id', ''))
+            if doc_p_id == target_id_str:
+                is_match = True
+            
+            # Check B: Name Match in Note (The logic from your working API)
+            # note format: "Partial payment from [Name] via..."
+            if not is_match:
+                note = doc.get('note', '').lower()
+                if target_name and f"from {target_name}" in note:
+                    is_match = True
+            
+            if is_match:
+                # Safe date formatting
+                date_str = '-'
+                if doc.get('date'):
+                    if isinstance(doc['date'], str):
+                        date_str = doc['date'][:10]
+                    else:
+                        date_str = doc['date'].strftime('%d-%b-%Y')
+
+                history.append({
+                    'date': date_str,
+                    'amount': doc.get('amount', 0),
+                    'method': doc.get('payment_method', 'Cash'),
+                    'note': doc.get('note', '')
+                })
+        return jsonify(history)
+
+    except Exception as e:
+        print(f"History error: {e}")
+        return jsonify([])    
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
