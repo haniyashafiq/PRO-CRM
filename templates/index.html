@@ -1053,8 +1053,7 @@
 
         const newPatientBtn = document.getElementById('add-new-patient-btn');
         if (newPatientBtn)
-          newPatientBtn.style.display =
-            currentUser.role === 'Admin' || currentUser.role === 'Doctor' ? 'flex' : 'none';
+          newPatientBtn.style.display = currentUser.role === 'Admin' ? 'flex' : 'none';
 
         const addExpenseBtn = document.getElementById('add-expense-btn');
         if (addExpenseBtn)
