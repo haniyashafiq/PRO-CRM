@@ -5964,15 +5964,19 @@
                 <h3 class="text-xl font-bold text-emerald-900">Psych Sessions</h3>
                 <p class="text-sm text-gray-500">Assigned sessions for the selected window.</p>
               </div>
-              <div class="flex items-center gap-2">
+              <div class="flex items-center gap-2 flex-wrap">
                 <input
                   type="date"
                   id="psych-filter-start"
-                  class="border rounded px-2 py-1 text-sm"
+                  class="border rounded px-2 py-1 text-sm w-full sm:w-auto"
                 />
-                <input type="date" id="psych-filter-end" class="border rounded px-2 py-1 text-sm" />
+                <input
+                  type="date"
+                  id="psych-filter-end"
+                  class="border rounded px-2 py-1 text-sm w-full sm:w-auto"
+                />
                 <button
-                  class="bg-emerald-600 text-white px-3 py-2 rounded text-sm"
+                  class="bg-emerald-600 text-white px-3 py-2 rounded text-sm w-full sm:w-auto"
                   onclick="loadPsychSessions()"
                 >
                   Refresh

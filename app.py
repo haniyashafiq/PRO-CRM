@@ -364,6 +364,15 @@ def get_dashboard_metrics():
         
         total_income_this_month = 0
         
+        # Calculate total expected income from active patients' monthly fees
+        for patient in active_patients:
+            try:
+                fee_str = patient.get('monthlyFee', '0') or '0'
+                # Handle string with commas (e.g., "10,000")
+                fee = int(str(fee_str).replace(',', '').strip() or '0')
+                total_income_this_month += fee
+            except (ValueError, TypeError):
+                pass  # Skip patients with invalid fee values
 
         # 3. Canteen Sales This Month (KPI Card)
         pipeline_month = [
