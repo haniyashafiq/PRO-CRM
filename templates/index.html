@@ -4155,67 +4155,41 @@
       }
     }
 
-    // --- DAILY REPORT LOGIC ---
+// --- DAILY REPORT LOGIC (12-Hour 8-8 Split & Fully Editable) ---
 
-    // --- DAILY REPORT LOGIC (UPDATED) ---
-
+    // 1. Define the 12-hour slots for Day (08:00 AM - 07:00 PM)
     const DAY_COLUMN_ORDER = [
-      'slot_bkfst',
-      'slot_0900',
-      'slot_1000',
-      'slot_1100',
-      'slot_1200',
-      'slot_1300',
-      'slot_1400',
-      'slot_1500',
-      'slot_1600',
-      'slot_med_day',
+      'slot_0800', 'slot_0900', 'slot_1000', 'slot_1100', 'slot_1200', 'slot_1300',
+      'slot_1400', 'slot_1500', 'slot_1600', 'slot_1700', 'slot_1800', 'slot_1900'
     ];
 
+    // 2. Define the 12-hour slots for Night (08:00 PM - 07:00 AM)
     const NIGHT_COLUMN_ORDER = [
-      'slot_1700',
-      'slot_1800',
-      'slot_1900',
-      'slot_2000',
-      'slot_2100',
-      'slot_beh',
-      'slot_2200',
-      'slot_2300',
-      'slot_0000',
-      'slot_0100',
-      'slot_0200',
-      'slot_0300',
-      'slot_0400',
-      'slot_0500',
-      'slot_0600',
-      'slot_0700',
+      'slot_2000', 'slot_2100', 'slot_2200', 'slot_2300', 'slot_0000', 'slot_0100',
+      'slot_0200', 'slot_0300', 'slot_0400', 'slot_0500', 'slot_0600', 'slot_0700'
     ];
 
-    const NIGHT_REMOVED_KEYS = new Set(['slot_0800', 'slot_med_night']);
-
-    const NIGHT_EXCLUSIVE_KEYS = new Set(['slot_1700', 'slot_1800', 'slot_1900', 'slot_2000']);
-
+    // 3. Define Default Labels (Time + Activity). 
+    // These appear if no custom config is saved, and are fully editable.
     const DEFAULT_DAY_CONFIG = [
-      { key: 'slot_bkfst', label: '08:00 AM' },
-      { key: 'slot_0900', label: '09:00 AM' },
-      { key: 'slot_1000', label: '10:00 AM' },
-      { key: 'slot_1100', label: '11:00 AM' },
-      { key: 'slot_1200', label: '12:00 PM' },
-      { key: 'slot_1300', label: '01:00 PM' },
-      { key: 'slot_1400', label: '02:00 PM' },
-      { key: 'slot_1500', label: '03:00 PM' },
-      { key: 'slot_1600', label: '04:00 PM' },
-      { key: 'slot_med_day', label: 'Day Medicine' },
+      { key: 'slot_0800', label: '08:00 AM Breakfast' },
+      { key: 'slot_0900', label: '09:00 AM Quran/Yoga' },
+      { key: 'slot_1000', label: '10:00 AM Dr. Round' },
+      { key: 'slot_1100', label: '11:00 AM Group Therapy' },
+      { key: 'slot_1200', label: '12:00 PM Group Therapy' },
+      { key: 'slot_1300', label: '01:00 PM Namaz' },
+      { key: 'slot_1400', label: '02:00 PM Lunch' },
+      { key: 'slot_1500', label: '03:00 PM Dr. Round' },
+      { key: 'slot_1600', label: '04:00 PM TV Time' },
+      { key: 'slot_1700', label: '05:00 PM Namaz' },
+      { key: 'slot_1800', label: '06:00 PM Group Therapy' },
+      { key: 'slot_1900', label: '07:00 PM Namaz' },
     ];
 
     const DEFAULT_NIGHT_CONFIG = [
-      { key: 'slot_1700', label: '05:00 PM' },
-      { key: 'slot_1800', label: '06:00 PM' },
-      { key: 'slot_1900', label: '07:00 PM' },
-      { key: 'slot_2000', label: '08:00 PM' },
-      { key: 'slot_2100', label: '09:00 PM' },
-      { key: 'slot_beh', label: '09:30 PM' },
-      { key: 'slot_2200', label: '10:00 PM' },
+      { key: 'slot_2000', label: '08:00 PM Dinner' },
+      { key: 'slot_2100', label: '09:00 PM Meds/Namaz' },
+      { key: 'slot_2200', label: '10:00 PM Sleep' },
       { key: 'slot_2300', label: '11:00 PM' },
       { key: 'slot_0000', label: '12:00 AM' },
       { key: 'slot_0100', label: '01:00 AM' },
@@ -4238,24 +4212,7 @@
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#39;');
 
-    const COLUMN_ACTIVITY_MAP = {
-      slot_bkfst: { time: '8 AM', activity: 'Breakfast' },
-      slot_0900: { time: '9 AM', activity: 'Quran / Yoga Class' },
-      slot_1000: { time: '10 AM', activity: 'Dr. Round' },
-      slot_1100: { time: '11 AM', activity: 'Group Therapy' },
-      slot_1200: { time: '12 PM', activity: 'Group Therapy' },
-      slot_1300: { time: '1 PM', activity: 'Namaz' },
-      slot_1400: { time: '2 PM', activity: 'Lunch' },
-      slot_1500: { time: '3 PM', activity: 'Dr. Round' },
-      slot_1600: { time: '4 PM', activity: 'TV Time' },
-      slot_1700: { time: '5 PM', activity: 'Namaz' },
-      slot_1800: { time: '6 PM', activity: 'Group Therapy' },
-      slot_1900: { time: '7 PM', activity: 'Namaz' },
-      slot_2000: { time: '8 PM', activity: 'Dinner' },
-      slot_2100: { time: '9 PM', activity: 'Namaz / Medicine' },
-      slot_beh: { time: '9:30 PM', activity: 'Lights Off' },
-    };
-
+    // Helper to sort columns
     const orderColumns = (columns, desiredOrder) => {
       if (!Array.isArray(columns)) return [];
       const columnMap = new Map(columns.map((col) => [col.key, col]));
@@ -4266,36 +4223,26 @@
           columnMap.delete(key);
         }
       });
+      // Append any leftovers (e.g. from old configs) at the end
       return [...ordered, ...columnMap.values()];
     };
 
+    // Helper to merge saved config with defaults
     const mergeWithDefaults = (columns, defaults, order) => {
       const baseMap = new Map(defaults.map((col) => [col.key, { ...col }]));
       if (Array.isArray(columns)) {
         columns.forEach((col) => {
-          baseMap.set(col.key, { ...(baseMap.get(col.key) || {}), ...col });
+          // If the key exists in our new 12-hour layout, update its label from DB.
+          // If it's an old key (like slot_bkfst), it gets added to the map.
+          if(baseMap.has(col.key)) {
+             baseMap.set(col.key, { ...baseMap.get(col.key), label: col.label });
+          } else {
+             baseMap.set(col.key, col);
+          }
         });
       }
       return orderColumns(Array.from(baseMap.values()), order);
     };
-
-    DAY_CONFIG = mergeWithDefaults(DAY_CONFIG, DEFAULT_DAY_CONFIG, DAY_COLUMN_ORDER);
-    NIGHT_CONFIG = mergeWithDefaults(NIGHT_CONFIG, DEFAULT_NIGHT_CONFIG, NIGHT_COLUMN_ORDER);
-
-    const enforceColumnPlacement = () => {
-      DAY_CONFIG = DAY_CONFIG.filter((col) => !NIGHT_EXCLUSIVE_KEYS.has(col.key));
-      const nightKeys = new Set(NIGHT_CONFIG.map((col) => col.key));
-      NIGHT_EXCLUSIVE_KEYS.forEach((key) => {
-        if (!nightKeys.has(key)) {
-          const fallback = DEFAULT_NIGHT_CONFIG.find((col) => col.key === key);
-          if (fallback) NIGHT_CONFIG.push({ ...fallback });
-        }
-      });
-      NIGHT_CONFIG = orderColumns(NIGHT_CONFIG, NIGHT_COLUMN_ORDER);
-      NIGHT_CONFIG = NIGHT_CONFIG.filter((col) => !NIGHT_REMOVED_KEYS.has(col.key));
-    };
-
-    enforceColumnPlacement();
 
     async function loadDailyReport() {
       const datePicker = document.getElementById('report-date-picker');
@@ -4307,32 +4254,27 @@
         document.getElementById('btn-save-layout').classList.remove('hidden');
       }
 
-      // 1. Fetch Layout Config (Column Names)
+      // 1. Fetch Layout Config
       try {
         const configRes = await fetch('/api/reports/config');
         if (configRes.ok) {
           const config = await configRes.json();
-          DAY_CONFIG = mergeWithDefaults(
-            config.day_columns,
-            DEFAULT_DAY_CONFIG,
-            DAY_COLUMN_ORDER
-          );
-          NIGHT_CONFIG = mergeWithDefaults(
-            config.night_columns,
-            DEFAULT_NIGHT_CONFIG,
-            NIGHT_COLUMN_ORDER
-          );
+          DAY_CONFIG = mergeWithDefaults(config.day_columns, DEFAULT_DAY_CONFIG, DAY_COLUMN_ORDER);
+          NIGHT_CONFIG = mergeWithDefaults(config.night_columns, DEFAULT_NIGHT_CONFIG, NIGHT_COLUMN_ORDER);
         } else {
           DAY_CONFIG = mergeWithDefaults(undefined, DEFAULT_DAY_CONFIG, DAY_COLUMN_ORDER);
           NIGHT_CONFIG = mergeWithDefaults(undefined, DEFAULT_NIGHT_CONFIG, NIGHT_COLUMN_ORDER);
         }
       } catch (e) {
+        console.error('Config load error, using defaults', e);
         DAY_CONFIG = mergeWithDefaults(undefined, DEFAULT_DAY_CONFIG, DAY_COLUMN_ORDER);
         NIGHT_CONFIG = mergeWithDefaults(undefined, DEFAULT_NIGHT_CONFIG, NIGHT_COLUMN_ORDER);
-        console.error('Config load error', e);
       }
-
-      enforceColumnPlacement();
+      
+      // Clean up: Filter out old legacy keys if you want a strictly clean table
+      // (Optional: this line removes columns that aren't in our new 12-hour definition)
+      DAY_CONFIG = DAY_CONFIG.filter(c => DAY_COLUMN_ORDER.includes(c.key));
+      NIGHT_CONFIG = NIGHT_CONFIG.filter(c => NIGHT_COLUMN_ORDER.includes(c.key));
 
       // 2. Fetch Active Patients
       if (typeof patientsData === 'undefined' || patientsData.length === 0) await fetchPatients();
@@ -4357,36 +4299,29 @@
       renderSplitTable('night', NIGHT_CONFIG, activePatients, reportMap);
     }
 
+    // Toggle Status: Empty -> Done (Green) -> Not Done (Red) -> Complaint (Yellow) -> Empty
     window.cycleReportStatus = async function (btnElement, patientId, timeSlot, currentStatus) {
-      // 1. Calculate Next Status
-      // Cycle: '' (Empty) -> 'done' (Green) -> 'not_done' (Red) -> 'complaint' (Yellow) -> '' (Empty)
       let nextStatus = 'done';
       if (currentStatus === 'done') nextStatus = 'not_done';
       else if (currentStatus === 'not_done') nextStatus = 'complaint';
       else if (currentStatus === 'complaint') nextStatus = '';
 
-      // 2. Optimistic UI Update (Update button immediately)
-      // Update Class
-      btnElement.className = `w-full h-6 rounded flex items-center justify-center transition-all text-xs ${getStatusClass(
-        nextStatus
-      )}`;
-      // Update Icon
+      // Optimistic UI Update
+      btnElement.className = `w-full h-6 rounded flex items-center justify-center transition-all text-xs ${getStatusClass(nextStatus)}`;
       btnElement.innerHTML = getStatusIcon(nextStatus);
       btnElement.dataset.status = nextStatus || '';
       btnElement.setAttribute('aria-label', statusLabelMap[nextStatus] || 'No Status');
-      // Update click handler for next time
-      // We must escape quotes properly for the new onclick string
       btnElement.setAttribute(
         'onclick',
         `cycleReportStatus(this, '${patientId}', '${timeSlot}', '${nextStatus}')`
       );
 
-      // 3. Send to Backend
+      // Send to Backend
       const datePicker = document.getElementById('report-date-picker');
       const date = datePicker ? datePicker.value : new Date().toISOString().split('T')[0];
 
       try {
-        const res = await fetch('/api/reports/update', {
+        await fetch('/api/reports/update', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -4396,11 +4331,6 @@
             status: nextStatus,
           }),
         });
-
-        if (!res.ok) {
-          console.error('Server error updating status');
-          // Optional: Revert UI if server fails
-        }
       } catch (e) {
         console.error('Network error updating status', e);
       }
@@ -4425,44 +4355,39 @@
       const headerRow = document.getElementById(`${type}-header-row`);
       const tbody = document.getElementById(`${type}-table-body`);
       const isAdmin = currentUser.role === 'Admin';
-      const accentClass = type === 'day' ? 'text-emerald-100' : 'text-indigo-200';
-
+      
       // Build Headers
-      const headerBaseClasses =
-        type === 'day'
+      const headerBaseClasses = type === 'day'
           ? 'px-2 py-2 text-left whitespace-nowrap sticky left-0 z-20 shadow-md bg-emerald-600 text-white'
           : 'px-2 py-2 text-left whitespace-nowrap sticky left-0 z-20 shadow-md bg-indigo-900 text-white';
 
       let headersHtml = `<th id="${type}-patient-header" class="${headerBaseClasses}" style="min-width: 100px; max-width: 140px;">
-                              <span class="patient-header-label font-semibold tracking-wide text-xs" style="transition: opacity 0.15s ease;">Patient</span>
-                           </th>`;
+                           <span class="patient-header-label font-semibold tracking-wide text-xs">Patient</span>
+                         </th>`;
+                         
       columns.forEach((col, index) => {
-        const meta = COLUMN_ACTIVITY_MAP[col.key];
-        const isEditableColumn = isAdmin && !meta;
-        const editableAttr = isEditableColumn ? 'contenteditable="true"' : '';
-        const blurAttr = isEditableColumn ? 'onblur="markLayoutDirty()"' : '';
-        const cursorClass = isEditableColumn
-          ? 'cursor-text hover:bg-white/10'
-          : 'cursor-default hover:bg-white/5';
-        const titleText = meta ? `${meta.time} • ${meta.activity}` : col.label || '';
-        const titleAttr = titleText ? `title="${escapeHtml(titleText)}"` : '';
-        const headerContent = meta
-          ? `<div class="text-[0.6rem] font-semibold tracking-tight uppercase text-white leading-tight">${meta.time}</div>
-               <div class="text-[0.5rem] font-semibold ${accentClass} uppercase leading-tight">${meta.activity}</div>`
-          : `<span class="text-[0.6rem]">${escapeHtml(col.label || '')}</span>`;
+        // *** EDITABLE HEADER LOGIC ***
+        // We set contenteditable="true" for ALL columns if user is Admin.
+        const isEditable = isAdmin; 
+        const editableAttr = isEditable ? 'contenteditable="true"' : '';
+        const blurAttr = isEditable ? 'onblur="markLayoutDirty()"' : '';
+        const cursorClass = isEditable ? 'cursor-text hover:bg-white/10' : 'cursor-default';
+        const titleAttr = `title="${escapeHtml(col.label || '')}"`;
+
+        // Render simple text inside the header so it's easily editable
+        const headerContent = `<span class="text-[0.6rem] leading-tight block whitespace-pre-wrap">${escapeHtml(col.label || '')}</span>`;
 
         headersHtml += `<th ${editableAttr} data-idx="${index}" ${titleAttr} ${blurAttr}
-                class="px-1 py-2 text-center whitespace-nowrap text-[0.65rem] font-semibold min-w-[45px] max-w-[60px] border-l border-white/20 ${cursorClass}">
-                ${headerContent}
-            </th>`;
+                        class="px-1 py-2 text-center align-middle whitespace-normal min-w-[50px] max-w-[70px] border-l border-white/20 ${cursorClass}">
+                        ${headerContent}
+                    </th>`;
       });
       headerRow.innerHTML = headersHtml;
 
       // Build Rows
       tbody.innerHTML = '';
       if (patients.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="${columns.length + 1
-          }" class="p-6 text-center text-gray-400">No active patients.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="${columns.length + 1}" class="p-6 text-center text-gray-400">No active patients.</td></tr>`;
         return;
       }
 
@@ -4478,14 +4403,13 @@
         const schedules = reportMap[pId] || {};
         let hasIssue = false;
 
-        const rowBaseClasses =
-          type === 'day'
+        const rowBaseClasses = type === 'day'
             ? 'px-2 py-1 font-bold text-emerald-900 bg-emerald-50'
             : 'px-2 py-1 font-bold text-indigo-900 bg-indigo-50';
 
-        let rowHtml = `<td class="${rowBaseClasses} sticky left-0 border-r z-20 whitespace-nowrap text-[0.65rem] max-w-[140px]" style="min-width: 100px;"><span class="block truncate" title="${escapeHtml(
-          p.name || ''
-        )}">${escapeHtml(p.name || '')}</span></td>`;
+        let rowHtml = `<td class="${rowBaseClasses} sticky left-0 border-r z-20 whitespace-nowrap text-[0.65rem] max-w-[140px]" style="min-width: 100px;">
+                         <span class="block truncate" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</span>
+                       </td>`;
 
         columns.forEach((col) => {
           const status = schedules[col.key];
@@ -4493,19 +4417,18 @@
           const cellClass = getStatusClass(status);
           const icon = getStatusIcon(status);
           const statusLabel = statusLabelMap[status] || 'No Status';
+          
           rowHtml += `
-                  <td class="p-0.5 border text-center align-middle">
-                      <button onclick="cycleReportStatus(this, '${pId}', '${col.key}', '${status || ''
-            }')" 
-                              class="w-full h-6 rounded flex items-center justify-center transition-all text-xs ${cellClass}"
-                              data-status="${status || ''}"
-                              data-patient="${pId}"
-                              data-slot="${col.key}"
-                              aria-label="${statusLabel}">
-                        ${icon}
-                      </button>
-                  </td>
-                `;
+            <td class="p-0.5 border text-center align-middle">
+              <button onclick="cycleReportStatus(this, '${pId}', '${col.key}', '${status || ''}')" 
+                      class="w-full h-6 rounded flex items-center justify-center transition-all text-xs ${cellClass}"
+                      data-status="${status || ''}"
+                      data-patient="${pId}"
+                      data-slot="${col.key}"
+                      aria-label="${statusLabel}">
+                ${icon}
+              </button>
+            </td>`;
         });
 
         const tr = document.createElement('tr');
@@ -4524,10 +4447,10 @@
 
       const fragment = document.createDocumentFragment();
 
+      // Logic to show "All on track" message or toggle button
       if (flaggedRows.length === 0 && normalRows.length > 0) {
         const infoRow = document.createElement('tr');
-        infoRow.innerHTML = `<td colspan="${columns.length + 1
-          }" class="px-4 py-4 text-center text-sm text-emerald-800 bg-emerald-50 font-semibold">All patients are currently on track.</td>`;
+        infoRow.innerHTML = `<td colspan="${columns.length + 1}" class="px-4 py-4 text-center text-sm text-emerald-800 bg-emerald-50 font-semibold">All patients are currently on track.</td>`;
         fragment.appendChild(infoRow);
       }
 
@@ -4542,8 +4465,7 @@
         toggleBtn.type = 'button';
         toggleBtn.id = `report-toggle-btn-${type}`;
         toggleBtn.dataset.count = normalRows.length;
-        toggleBtn.className =
-          'inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold rounded-full border border-amber-300 bg-white text-amber-700 shadow-sm hover:bg-amber-100 transition';
+        toggleBtn.className = 'inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-semibold rounded-full border border-amber-300 bg-white text-amber-700 shadow-sm hover:bg-amber-100 transition';
         toggleBtn.setAttribute('onclick', `toggleReportRows('${type}')`);
         toggleBtn.innerHTML = showAllNormal
           ? '<i class="fas fa-eye-slash"></i> Hide On-Track Patients'
@@ -4551,14 +4473,13 @@
         toggleCell.appendChild(toggleBtn);
         toggleRow.appendChild(toggleCell);
         fragment.appendChild(toggleRow);
-
+        
         normalRows.forEach((row) => fragment.appendChild(row));
       }
 
       if (flaggedRows.length === 0 && normalRows.length === 0) {
         const emptyRow = document.createElement('tr');
-        emptyRow.innerHTML = `<td colspan="${columns.length + 1
-          }" class="p-6 text-center text-gray-400">No active patients.</td>`;
+        emptyRow.innerHTML = `<td colspan="${columns.length + 1}" class="p-6 text-center text-gray-400">No active patients.</td>`;
         fragment.appendChild(emptyRow);
       }
 
@@ -4580,15 +4501,9 @@
       const headerCell = document.getElementById(`${type}-patient-header`);
       if (!headerCell) return;
       const label = headerCell.querySelector('.patient-header-label');
-      if (!headerCell.dataset.baseBg || !headerCell.dataset.baseShadow) {
-        const computed = window.getComputedStyle(headerCell);
-        headerCell.dataset.baseBg = computed.backgroundColor || '';
-        headerCell.dataset.baseShadow = computed.boxShadow || '';
-      }
+      // Simple fade effect on scroll for the "Patient" label
       const isScrolled = container.scrollLeft > 0;
       if (label) label.style.opacity = isScrolled ? '0' : '1';
-      headerCell.style.backgroundColor = isScrolled ? 'transparent' : headerCell.dataset.baseBg;
-      headerCell.style.boxShadow = isScrolled ? 'none' : headerCell.dataset.baseShadow;
     };
 
     window.toggleReportRows = function (type) {
@@ -4611,7 +4526,6 @@
       }
     };
 
-    // --- Layout Saving Logic ---
     function markLayoutDirty() {
       const btn = document.getElementById('btn-save-layout');
       btn.classList.add('bg-yellow-500', 'animate-pulse');
@@ -4619,14 +4533,14 @@
     }
 
     async function saveLayoutConfig() {
-      // Scrape headers from DOM
       const scrapeHeaders = (id) => {
         const ths = document.querySelectorAll(`#${id}-header-row th[data-idx]`);
         const newCols = [];
         ths.forEach((th) => {
           const idx = th.getAttribute('data-idx');
-          // Day or Night array depends on the ID passed
+          // Retrieve the original key based on index to maintain backend data mapping
           const originalKey = id === 'day' ? DAY_CONFIG[idx].key : NIGHT_CONFIG[idx].key;
+          // Capture the new text entered by the user
           newCols.push({ key: originalKey, label: th.innerText.trim() });
         });
         return newCols;
@@ -4647,16 +4561,15 @@
           const btn = document.getElementById('btn-save-layout');
           btn.classList.remove('bg-yellow-500', 'animate-pulse');
           btn.classList.add('bg-gray-800');
-          // Update local memory
+          // Update local state
           DAY_CONFIG = newDayConfig;
           NIGHT_CONFIG = newNightConfig;
-          enforceColumnPlacement();
         }
       } catch (e) {
         showSuccessModal('Error saving layout', true);
       }
     }
-
+    
     // --- Print Logic ---
     window.printReport = function (mode) {
       const printableHTML = generatePrintableReport(mode);
