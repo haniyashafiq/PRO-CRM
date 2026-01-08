@@ -4953,30 +4953,35 @@
       if (originalUpdateDashboard) await originalUpdateDashboard();
       await loadEmergencyAlerts(); // Load alerts when dashboard opens
     };
-
-    // --- PRESCRIPTION LOGIC ---
+// --- PRESCRIPTION LOGIC (START) ---
     let prescriptionOptions = [];
 
+    // 1. Open Modal & Initialize
     async function openPrescriptionModal() {
       const modal = document.getElementById('prescription-modal');
       const list = document.getElementById('prescription-patient-list');
       const input = document.getElementById('prescription-patient-input');
-      const hiddenId = document.getElementById('prescription-patient-id');
-
-      // Reset fields
-      input.value = '';
-      hiddenId.value = '';
+      
+      // Reset the form fields
+      document.getElementById('prescription-form').reset();
+      
+      // Clear previous medication rows
+      document.getElementById('medication-rows-container').innerHTML = ''; 
       list.innerHTML = '';
+
+      // Add one empty row by default so the user has somewhere to type immediately
+      addMedicationRow();
 
       modal.classList.remove('hidden');
 
+      // Load Patients for the Searchable Dropdown
       try {
-        // If patientsData isn't loaded yet (rare, but possible), fetch it
+        // Only fetch if not already loaded
         if (!patientsData || patientsData.length === 0) {
           await fetchPatients();
         }
-
-        // Filter active patients and map for dropdown
+        
+        // Filter for active patients only
         prescriptionOptions = patientsData
           .filter(p => !p.isDischarged)
           .map(p => ({
@@ -4987,12 +4992,11 @@
           }));
 
         if (prescriptionOptions.length === 0) {
-          input.placeholder = "No active patients found.";
+          input.placeholder = "No active patients. Type name manually.";
         } else {
-          input.placeholder = "Search patient name...";
-          // Populate datalist
+          input.placeholder = "Search or type new name...";
           list.innerHTML = prescriptionOptions
-            .map(p => `<option value="${escapeHtml(p.name)}">Father: ${escapeHtml(p.father)}</option>`)
+            .map(p => `<option value="${escapeHtml(p.name)}">Father: ${escapeHtml(p.father)} | Age: ${p.age}</option>`)
             .join('');
         }
       } catch (e) {
@@ -5000,64 +5004,267 @@
       }
     }
 
+    // 2. Auto-fill Age if Name Matches an Existing Patient
     function handlePrescriptionInput() {
       const input = document.getElementById('prescription-patient-input');
-      const hiddenId = document.getElementById('prescription-patient-id');
+      const ageInput = document.getElementById('prescription-patient-age');
       const val = input.value;
-
-      // Find matching patient object based on name
+      
+      // Find matching patient object
       const match = prescriptionOptions.find(p => p.name === val);
+      
       if (match) {
-        hiddenId.value = match.id;
-        // Store age data on the input for retrieval
-        input.dataset.age = match.age;
-      } else {
-        hiddenId.value = '';
-        delete input.dataset.age;
+        ageInput.value = match.age;
       }
+      // If no match, we keep whatever the user typed (allows new patients)
     }
 
+    // 3. Add a New Medicine Row (Inputs)
+    function addMedicationRow() {
+      const container = document.getElementById('medication-rows-container');
+      const rowId = Date.now(); // Unique ID for delete button
+      const div = document.createElement('div');
+      
+      // *** CRITICAL CLASS 'med-row' ADDED HERE ***
+      div.className = "grid grid-cols-12 gap-2 mb-2 items-start med-row"; 
+      div.id = `med-row-${rowId}`;
+      
+      div.innerHTML = `
+        <div class="col-span-4">
+          <input class="med-name w-full border p-2 rounded text-sm" placeholder="Medicine Name">
+        </div>
+        <div class="col-span-3">
+          <input class="med-dosage w-full border p-2 rounded text-sm" placeholder="Dosage (e.g. 1+0+1)">
+        </div>
+        <div class="col-span-2">
+          <input class="med-freq w-full border p-2 rounded text-sm" placeholder="Days">
+        </div>
+        <div class="col-span-2">
+          <input class="med-instr w-full border p-2 rounded text-sm" placeholder="Instruction">
+        </div>
+        <div class="col-span-1 text-center pt-1">
+          <button type="button" onclick="document.getElementById('med-row-${rowId}').remove()" class="text-red-500 hover:text-red-700">
+            <i class="fas fa-trash"></i>
+          </button>
+        </div>
+      `;
+      container.appendChild(div);
+    }
+
+    // 4. Generate Data & Trigger Print
     function handlePrescriptionGeneration(e) {
       e.preventDefault();
 
-      const input = document.getElementById('prescription-patient-input');
-      const patientName = input.value;
-      const patientAge = input.dataset.age || '';
+      // --- A. Capture Static Values ---
+      const name = document.getElementById('prescription-patient-input').value || '';
+      const age = document.getElementById('prescription-patient-age').value || '';
+      const diagnosis = document.getElementById('prescription-diagnosis').value || '';
+      const symptoms = document.getElementById('prescription-symptoms').value || '';
+      const notes = document.getElementById('prescription-notes').value || '';
 
-      if (!patientName) {
-        showSuccessModal("Please select a patient.", true);
-        return;
-      }
-
-      // 1. Fill Printable Data
+      // --- B. Map to Print Layout ---
+      
+      // 1. Header Info
       document.getElementById('rx-date-print').innerText = new Date().toLocaleDateString('en-PK', {
         day: 'numeric', month: 'long', year: 'numeric'
       });
-      document.getElementById('rx-name-print').innerText = patientName;
-      document.getElementById('rx-age-print').innerText = patientAge ? `${patientAge} Yrs` : '___';
+      document.getElementById('rx-name-print').innerText = name;
+      document.getElementById('rx-age-print').innerText = age ? `${age} Yrs` : '';
 
-      // 2. Hide Modal
+      // 2. Clinical Info (Convert newlines to <br> for HTML display)
+      // Check elements exist before setting to avoid errors
+      const diagEl = document.getElementById('rx-diagnosis-print');
+      if(diagEl) diagEl.innerHTML = diagnosis.replace(/\n/g, '<br>');
+      
+      const sympEl = document.getElementById('rx-symptoms-print');
+      if(sympEl) sympEl.innerHTML = symptoms.replace(/\n/g, '<br>');
+      
+      const notesEl = document.getElementById('rx-notes-print');
+      if(notesEl) notesEl.innerHTML = notes.replace(/\n/g, '<br>');
+
+      // 3. Medicine Table Loop
+      const tbody = document.getElementById('rx-table-body');
+      tbody.innerHTML = ''; // Clear previous print data
+
+      // Select all rows we created in the modal using the 'med-row' class
+      const inputRows = document.querySelectorAll('#medication-rows-container .med-row');
+      let hasValidMeds = false;
+
+      inputRows.forEach((row, index) => {
+        // Safe navigation to get values
+        const medName = row.querySelector('.med-name')?.value || '';
+        const medDosage = row.querySelector('.med-dosage')?.value || '';
+        const medFreq = row.querySelector('.med-freq')?.value || '';
+        const medInstr = row.querySelector('.med-instr')?.value || '';
+
+        // Only add row to print table if Medicine Name is not empty
+        if (medName.trim() !== "") {
+          hasValidMeds = true;
+          tbody.innerHTML += `
+            <tr>
+                <td class="border border-gray-300 p-2 text-center text-gray-500 text-xs">${index + 1}</td>
+                <td class="border border-gray-300 p-2 font-bold text-gray-800 text-sm">${medName}</td>
+                <td class="border border-gray-300 p-2 text-sm">${medDosage}</td>
+                <td class="border border-gray-300 p-2 text-sm">${medFreq}</td>
+                <td class="border border-gray-300 p-2 text-sm">${medInstr}</td>
+            </tr>`;
+        }
+      });
+
+      // 4. Fallback: If table is empty (no meds added), show blank ruled lines for handwriting
+      if (!hasValidMeds) {
+        for(let i=1; i<=5; i++) {
+           tbody.innerHTML += `
+            <tr>
+               <td class="border border-gray-300 p-4 text-center text-gray-300">${i}</td>
+               <td class="border border-gray-300"></td>
+               <td class="border border-gray-300"></td>
+               <td class="border border-gray-300"></td>
+               <td class="border border-gray-300"></td>
+            </tr>`;
+        }
+      }
+
+      // --- C. Switch to Print View ---
       document.getElementById('prescription-modal').classList.add('hidden');
-
-      // 3. Trigger Print
+      
       const printEl = document.getElementById('printable-prescription');
-      const mainContent = document.getElementById('printable-area'); // Existing generic print area
+      const mainContent = document.getElementById('printable-area'); 
 
-      // Ensure only prescription is visible
+      // Hide all other views
       if (mainContent) mainContent.classList.remove('print-active');
       document.getElementById('printable-receipt').classList.remove('print-active');
       document.getElementById('printable-discharge-slip').classList.remove('print-active');
 
+      // Show Prescription Container
       printEl.classList.remove('hidden');
       printEl.classList.add('print-active');
 
+      // Trigger Browser Print
       window.print();
 
-      // 4. Cleanup
+      // Restore View after print dialog closes
       setTimeout(() => {
         printEl.classList.add('hidden');
         printEl.classList.remove('print-active');
       }, 1000);
+    }
+    // --- PRESCRIPTION LOGIC (END) ---
+
+    // --- OLD BALANCE LOGIC ---
+    async function loadOldBalances() {
+      try {
+        const res = await fetch('/api/old-balances');
+        const records = await res.json();
+        const tbody = document.getElementById('old-balance-body');
+        
+        if (!tbody) return;
+        tbody.innerHTML = '';
+
+        if (records.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="6" class="p-6 text-center text-gray-400">No recovery records found.</td></tr>';
+          return;
+        }
+
+        records.forEach((rec, index) => {
+          tbody.innerHTML += `
+            <tr class="hover:bg-indigo-50 transition border-b border-gray-100">
+              <td class="px-4 py-3 text-center text-gray-500 text-xs">${index + 1}</td>
+              <td class="px-4 py-3 font-semibold text-gray-800">${rec.name}</td>
+              <td class="px-4 py-3 font-mono font-bold text-indigo-700">${formatCurrency(rec.amount)}</td>
+              <td class="px-4 py-3 text-sm text-gray-600">${formatDisplayDate(rec.commitment_date)}</td>
+              <td class="px-4 py-3 text-sm text-gray-600">${formatDisplayDate(rec.last_call_date)}</td>
+              <td class="px-4 py-3 text-center">
+                <button onclick="deleteOldBalance('${rec.id}')" class="text-red-500 hover:text-red-700 transition" title="Delete">
+                  <i class="fas fa-trash"></i>
+                </button>
+              </td>
+            </tr>
+          `;
+        });
+      } catch (e) {
+        console.error("Error loading old balances", e);
+      }
+    }
+
+    async function addOldBalance(e) {
+      e.preventDefault();
+      const data = {
+        name: document.getElementById('ob-name').value,
+        amount: document.getElementById('ob-amount').value,
+        commitment_date: document.getElementById('ob-commit-date').value,
+        last_call_date: document.getElementById('ob-call-date').value,
+      };
+
+      const res = await fetch('/api/old-balances', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+
+      if (res.ok) {
+        showSuccessModal('Recovery Record Added');
+        e.target.reset();
+        loadOldBalances();
+      } else {
+        showSuccessModal('Error adding record', true);
+      }
+    }
+
+    async function deleteOldBalance(id) {
+      if (!await showConfirmModal("Delete this recovery record?")) return;
+      
+      const res = await fetch(`/api/old-balances/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        showSuccessModal('Record Deleted');
+        loadOldBalances();
+      }
+    }
+
+    // UPDATE THIS EXISTING FUNCTION IN YOUR CODE
+    async function renderOverheads() {
+       if (currentUser.role !== 'Admin') return;
+       totalSalaries = 0;
+       totalBills = 0;
+       await Promise.all([renderTeam(true), renderUtilityBills(true)]);
+       updateOverheadTotal();
+       
+       // --- NEW LINE ADDED HERE ---
+       loadOldBalances(); 
+       // ---------------------------
+
+       // ... existing income logic ...
+       try {
+         const res = await fetch('/api/accounts/summary');
+         if (!res.ok) throw new Error('Failed to load accounts');
+         const accounts = await res.json();
+         const activePatients = accounts.filter((p) => !p.isDischarged);
+         let totalFees = 0, totalLaundry = 0, totalCanteen = 0, totalReceived = 0;
+         activePatients.forEach((p) => {
+           totalFees += Number(String(p.monthlyFee).replace(/,/g, '')) || 0;
+           totalLaundry += Number(String(p.laundryAmount).replace(/,/g, '')) || 0;
+           totalCanteen += Number(String(p.canteenTotal).replace(/,/g, '')) || 0;
+           totalReceived += Number(String(p.receivedAmount).replace(/,/g, '')) || 0;
+         });
+         const netExpected = totalFees + totalLaundry + totalCanteen - totalReceived;
+         const incomeEl = document.getElementById('overhead-total-income');
+         if (incomeEl) {
+           incomeEl.innerText = formatCurrency(netExpected);
+           const parentContainer = incomeEl.parentElement.parentElement;
+           const oldBreakdown = document.getElementById('income-breakdown-details');
+           if (oldBreakdown) oldBreakdown.remove();
+           const oldSubtitle = incomeEl.nextElementSibling;
+           if (oldSubtitle) oldSubtitle.style.display = 'none';
+           const breakdownHtml = `
+             <div id="income-breakdown-details" class="mt-3 text-xs text-emerald-800 font-medium space-y-1 border-t border-emerald-200 pt-2">
+               <div class="flex justify-between"><span>Remaining Fees:</span> <span>${formatNumber(totalFees - totalReceived)}</span></div>
+               <div class="flex justify-between"><span>Laundry:</span> <span>${formatNumber(totalLaundry)}</span></div>
+               <div class="flex justify-between"><span>Canteen:</span> <span>${formatNumber(totalCanteen)}</span></div>
+             </div>
+           `;
+           incomeEl.parentElement.insertAdjacentHTML('afterend', breakdownHtml);
+         }
+       } catch (e) { console.error(e); }
     }
   </script>
 </head>
@@ -6104,6 +6311,65 @@
           </div>
         </div>
       </div>
+
+      <div class="mt-12 pt-8 border-t-2 border-dashed border-gray-300">
+      <div class="mb-6">
+        <h2 class="text-xl font-bold text-indigo-900 flex items-center">
+          <i class="fas fa-history mr-2"></i> Old Balance / Recoveries
+        </h2>
+        <p class="text-sm text-gray-500">Track outstanding balances and recovery commitments.</p>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div class="col-span-1 bg-white p-6 rounded-xl shadow-sm border border-indigo-100 h-fit">
+          <h4 class="font-bold text-indigo-800 mb-3 text-sm uppercase">Add Recovery Record</h4>
+          <form onsubmit="addOldBalance(event)">
+            <div class="mb-3">
+              <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Person Name</label>
+              <input id="ob-name" type="text" class="w-full border bg-gray-50 p-2 rounded text-sm focus:ring-2 focus:ring-indigo-500" placeholder="Name" required />
+            </div>
+            <div class="mb-3">
+              <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Amount (PKR)</label>
+              <input id="ob-amount" type="number" class="w-full border p-2 rounded text-sm" placeholder="0" required />
+            </div>
+            <div class="grid grid-cols-2 gap-3 mb-4">
+              <div>
+                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Commitment Date</label>
+                <input id="ob-commit-date" type="date" class="w-full border p-2 rounded text-sm" required />
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Last Call Date</label>
+                <input id="ob-call-date" type="date" class="w-full border p-2 rounded text-sm" required />
+              </div>
+            </div>
+            <button class="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-lg font-bold shadow transition text-sm">
+              <i class="fas fa-plus mr-2"></i> Add Record
+            </button>
+          </form>
+        </div>
+
+        <div class="col-span-1 lg:col-span-2">
+          <div class="bg-white rounded-xl shadow-sm border border-indigo-100 overflow-hidden">
+            <div class="overflow-x-auto">
+              <table class="min-w-full divide-y divide-indigo-100">
+                <thead class="bg-indigo-50 text-indigo-900">
+                  <tr>
+                    <th class="px-4 py-3 text-center text-xs font-bold uppercase">#</th>
+                    <th class="px-4 py-3 text-left text-xs font-bold uppercase">Name</th>
+                    <th class="px-4 py-3 text-left text-xs font-bold uppercase">Amount</th>
+                    <th class="px-4 py-3 text-left text-xs font-bold uppercase">Commitment</th>
+                    <th class="px-4 py-3 text-left text-xs font-bold uppercase">Last Call</th>
+                    <th class="px-4 py-3 text-center text-xs font-bold uppercase">Action</th>
+                  </tr>
+                </thead>
+                <tbody id="old-balance-body" class="divide-y divide-gray-50 bg-white text-sm">
+                  </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
     </section>
 
     <!-- ================= ATTENDANCE VIEW SECTION ================= -->
@@ -7461,137 +7727,166 @@
     });
   </script>
 
-  <div id="prescription-modal"
-    class="fixed inset-0 bg-gray-900 bg-opacity-50 hidden flex items-center justify-center z-50">
-    <div class="bg-white p-6 rounded-xl shadow-2xl w-full max-w-md mx-4">
-      <div class="flex justify-between items-center mb-4">
+<div id="prescription-modal" class="fixed inset-0 bg-gray-900 bg-opacity-50 hidden flex items-center justify-center z-50">
+    <div class="bg-white p-6 rounded-xl shadow-2xl w-full max-w-4xl mx-4 max-h-[90vh] overflow-y-auto">
+      <div class="flex justify-between items-center mb-4 border-b pb-2">
         <h3 class="text-xl font-bold text-gray-800">
-          <i class="fas fa-file-medical mr-2"></i>Generate Prescription
+          <i class="fas fa-file-medical mr-2 text-emerald-600"></i>Generate Prescription
         </h3>
-        <button onclick="document.getElementById('prescription-modal').classList.add('hidden')"
-          class="text-gray-400 hover:text-gray-600">
+        <button onclick="document.getElementById('prescription-modal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600">
           <i class="fas fa-times text-xl"></i>
         </button>
       </div>
 
-      <form onsubmit="handlePrescriptionGeneration(event)">
-        <div class="mb-6">
-          <label class="block text-sm font-bold text-gray-700 mb-2">Select Patient</label>
-          <div class="relative">
-            <span class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <i class="fas fa-search text-gray-400"></i>
-            </span>
+      <form id="prescription-form" onsubmit="handlePrescriptionGeneration(event)">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 bg-gray-50 p-4 rounded-lg">
+          <div>
+            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Patient Name</label>
             <input id="prescription-patient-input" list="prescription-patient-list" oninput="handlePrescriptionInput()"
-              autocomplete="off" class="w-full border p-3 pl-10 rounded bg-gray-50 focus:ring-2 focus:ring-emerald-500"
-              placeholder="Search patient name..." required />
+              autocomplete="off" class="w-full border p-2 rounded focus:ring-2 focus:ring-emerald-500"
+              placeholder="Search or type name..." required />
             <datalist id="prescription-patient-list"></datalist>
-            <input type="hidden" id="prescription-patient-id" />
           </div>
-          <p class="text-xs text-gray-500 mt-2">
-            Select a patient to auto-fill their Name and Age.
-          </p>
+          <div>
+            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Age</label>
+            <input id="prescription-patient-age" type="text" class="w-full border p-2 rounded focus:ring-2 focus:ring-emerald-500" placeholder="e.g. 25" />
+          </div>
         </div>
 
-        <button type="submit"
-          class="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-lg font-bold shadow transition flex justify-center items-center gap-2">
-          <i class="fas fa-print"></i> Generate & Print
-        </button>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div>
+            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Diagnosis</label>
+            <textarea id="prescription-diagnosis" class="w-full border p-2 rounded h-20" placeholder="Enter diagnosis..."></textarea>
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Symptoms</label>
+            <textarea id="prescription-symptoms" class="w-full border p-2 rounded h-20" placeholder="Enter symptoms..."></textarea>
+          </div>
+        </div>
+
+        <div class="mb-4">
+          <div class="flex justify-between items-center mb-2">
+            <label class="block text-xs font-bold text-gray-500 uppercase">Medications</label>
+            <button type="button" onclick="addMedicationRow()" class="text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded hover:bg-emerald-200">
+              <i class="fas fa-plus mr-1"></i> Add Med
+            </button>
+          </div>
+          
+          <div class="bg-gray-100 p-2 rounded-t text-xs font-bold text-gray-600 grid grid-cols-12 gap-2">
+            <div class="col-span-4">Medicine Name</div>
+            <div class="col-span-3">Dosage</div>
+            <div class="col-span-2">Duration</div>
+            <div class="col-span-2">Instructions</div>
+            <div class="col-span-1"></div>
+          </div>
+          
+          <div id="medication-rows-container" class="max-h-60 overflow-y-auto border border-t-0 p-2 rounded-b">
+            </div>
+        </div>
+
+        <div class="mb-6">
+          <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Additional Notes / Follow Up</label>
+          <textarea id="prescription-notes" class="w-full border p-2 rounded h-16" placeholder="Any special instructions..."></textarea>
+        </div>
+
+        <div class="flex gap-3">
+            <button type="submit" class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-lg font-bold shadow transition flex justify-center items-center gap-2">
+            <i class="fas fa-print"></i> Generate & Print
+            </button>
+            <button type="button" onclick="document.getElementById('prescription-modal').classList.add('hidden')" class="px-6 py-3 bg-gray-200 text-gray-700 rounded-lg font-bold hover:bg-gray-300">
+            Cancel
+            </button>
+        </div>
       </form>
     </div>
   </div>
 
-  <div id="printable-prescription" class="hidden">
-  <div class="prescription-container bg-white h-screen flex flex-col font-sans text-gray-900">
-    
-    <div>
-      <div class="flex items-center justify-between border-b-2 border-emerald-800 pb-4 mb-6">
-        <div class="flex items-center gap-4">
-          <i class="fas fa-brain text-5xl text-emerald-800"></i>
+<div id="printable-prescription" class="hidden">
+    <div class="prescription-container bg-white h-screen flex flex-col font-sans text-gray-900">
+      
+      <div>
+        <div class="flex items-center justify-between border-b-2 border-emerald-800 pb-4 mb-6">
+          <div class="flex items-center gap-4">
+            <i class="fas fa-brain text-5xl text-emerald-800"></i>
+            <div>
+              <h1 class="text-3xl font-bold tracking-wider leading-none">PRO</h1>
+              <h2 class="text-sm font-bold text-emerald-800 tracking-widest uppercase mb-1">Pakistan Recovery Oasis</h2>
+              <p class="text-xs text-gray-500">Addiction Treatment & Psychological Services</p>
+              <p class="text-xs text-gray-500">Abbottabad, Pakistan</p>
+            </div>
+          </div>
+          <div class="text-right">
+            <div class="text-3xl font-bold text-gray-800 uppercase tracking-widest" style="color: #064e3b;">Prescription</div>
+            <div class="mt-2 text-sm font-semibold text-gray-600">
+              Date: <span id="rx-date-print" class="font-mono text-lg text-gray-900 border-b border-gray-400 px-2 ml-2"></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="bg-emerald-50 p-4 rounded-lg border border-emerald-100 mb-6">
+          <div class="flex gap-8 items-end text-sm">
+            <div class="flex-1">
+              <span class="block text-xs font-bold text-emerald-800 uppercase tracking-wide mb-1">Patient Name</span>
+              <span id="rx-name-print" class="text-xl font-bold text-gray-900 border-b border-gray-300 w-full block pb-1 min-h-[30px]"></span>
+            </div>
+            <div class="w-32">
+              <span class="block text-xs font-bold text-emerald-800 uppercase tracking-wide mb-1">Age</span>
+              <span id="rx-age-print" class="text-xl font-bold text-gray-900 border-b border-gray-300 w-full block pb-1 min-h-[30px]"></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-10 mb-6">
           <div>
-            <h1 class="text-3xl font-bold tracking-wider leading-none">PRO</h1>
-            <h2 class="text-sm font-bold text-emerald-800 tracking-widest uppercase mb-1">Pakistan Recovery Oasis</h2>
-            <p class="text-xs text-gray-500">Addiction Treatment & Psychological Services</p>
-            <p class="text-xs text-gray-500">Abbottabad, Pakistan</p>
+            <h3 class="font-bold text-emerald-900 uppercase text-xs mb-2 border-b-2 border-emerald-100 inline-block pb-1">Diagnosis</h3>
+            <div id="rx-diagnosis-print" class="text-sm text-gray-800 min-h-[40px]">
+                </div>
+          </div>
+          <div>
+            <h3 class="font-bold text-emerald-900 uppercase text-xs mb-2 border-b-2 border-emerald-100 inline-block pb-1">Symptoms</h3>
+            <div id="rx-symptoms-print" class="text-sm text-gray-800 min-h-[40px]">
+                </div>
           </div>
         </div>
-        <div class="text-right">
-          <div class="text-3xl font-bold text-gray-800 uppercase tracking-widest" style="color: #064e3b;">Prescription</div>
-          <div class="mt-2 text-sm font-semibold text-gray-600">
-            Date: <span id="rx-date-print" class="font-mono text-lg text-gray-900 border-b border-gray-400 px-2 ml-2"></span>
+
+        <div class="mb-4">
+          <div class="flex items-end gap-2 mb-2">
+            <span class="text-4xl font-serif font-bold text-emerald-900 leading-none">Rx</span>
+          </div>
+          <table class="w-full text-sm border-collapse">
+            <thead>
+              <tr class="bg-gray-100 text-gray-700 uppercase text-[10px] tracking-wider">
+                <th class="border border-gray-400 p-2 text-center w-10">#</th>
+                <th class="border border-gray-400 p-2 text-left w-[35%]">Medicine Name</th>
+                <th class="border border-gray-400 p-2 text-left">Dosage</th>
+                <th class="border border-gray-400 p-2 text-left">Duration</th>
+                <th class="border border-gray-400 p-2 text-left w-[25%]">Instructions</th>
+              </tr>
+            </thead>
+            <tbody id="rx-table-body" class="text-gray-800">
+              </tbody>
+          </table>
+        </div>
+
+        <div class="mt-4">
+          <h3 class="font-bold text-emerald-900 uppercase text-xs mb-1">Additional Notes / Follow Up</h3>
+          <div id="rx-notes-print" class="text-sm text-gray-800 p-2 border border-gray-200 rounded min-h-[60px]">
+             </div>
+        </div>
+      </div>
+
+      <div class="mt-auto pt-4">
+        <div class="flex justify-between items-end">
+          <div class="text-[10px] text-gray-400">Generated by PRO System</div>
+          <div class="text-center w-48">
+            <div class="border-b-2 border-gray-800 mb-2"></div>
+            <p class="font-bold text-gray-800 text-sm">Doctor's Signature</p>
           </div>
         </div>
       </div>
 
-      <div class="bg-emerald-50 p-4 rounded-lg border border-emerald-100 mb-6">
-        <div class="flex gap-8 items-end text-sm">
-          <div class="flex-1">
-            <span class="block text-xs font-bold text-emerald-800 uppercase tracking-wide mb-1">Patient Name</span>
-            <span id="rx-name-print" class="text-xl font-bold text-gray-900 border-b border-gray-300 w-full block pb-1"></span>
-          </div>
-          <div class="w-32">
-            <span class="block text-xs font-bold text-emerald-800 uppercase tracking-wide mb-1">Age</span>
-            <span id="rx-age-print" class="text-xl font-bold text-gray-900 border-b border-gray-300 w-full block pb-1"></span>
-          </div>
-        </div>
-      </div>
-
-      <div class="grid grid-cols-2 gap-10 mb-6">
-        <div>
-          <h3 class="font-bold text-emerald-900 uppercase text-xs mb-2 border-b-2 border-emerald-100 inline-block pb-1">Diagnosis</h3>
-          <div class="border-b border-gray-300 border-dashed h-8 mb-2"></div>
-          <div class="border-b border-gray-300 border-dashed h-8"></div>
-        </div>
-        <div>
-          <h3 class="font-bold text-emerald-900 uppercase text-xs mb-2 border-b-2 border-emerald-100 inline-block pb-1">Symptoms</h3>
-          <div class="border-b border-gray-300 border-dashed h-8 mb-2"></div>
-          <div class="border-b border-gray-300 border-dashed h-8"></div>
-        </div>
-      </div>
-
-      <div class="mb-4">
-        <div class="flex items-end gap-2 mb-2">
-          <span class="text-4xl font-serif font-bold text-emerald-900 leading-none">Rx</span>
-        </div>
-        <table class="w-full text-sm border-collapse">
-          <thead>
-            <tr class="bg-gray-100 text-gray-700 uppercase text-[10px] tracking-wider">
-              <th class="border border-gray-400 p-2 text-center w-10">#</th>
-              <th class="border border-gray-400 p-2 text-left w-[35%]">Medicine Name</th>
-              <th class="border border-gray-400 p-2 text-left">Dosage</th>
-              <th class="border border-gray-400 p-2 text-left">Frequency</th>
-              <th class="border border-gray-400 p-2 text-left w-[25%]">End per med / Instructions</th>
-            </tr>
-          </thead>
-          <tbody class="text-gray-800">
-            <tr><td class="border border-gray-300 p-3 text-center text-gray-400">1</td><td class="border border-gray-300"></td><td class="border border-gray-300"></td><td class="border border-gray-300"></td><td class="border border-gray-300"></td></tr>
-            <tr><td class="border border-gray-300 p-3 text-center text-gray-400">2</td><td class="border border-gray-300"></td><td class="border border-gray-300"></td><td class="border border-gray-300"></td><td class="border border-gray-300"></td></tr>
-            <tr><td class="border border-gray-300 p-3 text-center text-gray-400">3</td><td class="border border-gray-300"></td><td class="border border-gray-300"></td><td class="border border-gray-300"></td><td class="border border-gray-300"></td></tr>
-            <tr><td class="border border-gray-300 p-3 text-center text-gray-400">4</td><td class="border border-gray-300"></td><td class="border border-gray-300"></td><td class="border border-gray-300"></td><td class="border border-gray-300"></td></tr>
-            <tr><td class="border border-gray-300 p-3 text-center text-gray-400">5</td><td class="border border-gray-300"></td><td class="border border-gray-300"></td><td class="border border-gray-300"></td><td class="border border-gray-300"></td></tr>
-            <tr><td class="border border-gray-300 p-3 text-center text-gray-400">6</td><td class="border border-gray-300"></td><td class="border border-gray-300"></td><td class="border border-gray-300"></td><td class="border border-gray-300"></td></tr>
-          </tbody>
-        </table>
-      </div>
-
-      <div class="mt-2">
-        <h3 class="font-bold text-emerald-900 uppercase text-xs mb-1">Additional Notes / Follow Up</h3>
-        <div class="border-b border-gray-300 h-8"></div>
-        <div class="border-b border-gray-300 h-8"></div>
-      </div>
     </div>
-
-    <div class="mt-auto pt-4">
-      <div class="flex justify-between items-end">
-        <div class="text-[10px] text-gray-400">Generated by PRO System</div>
-        <div class="text-center w-48">
-          <div class="border-b-2 border-gray-800 mb-2"></div>
-          <p class="font-bold text-gray-800 text-sm">Doctor's Signature</p>
-        </div>
-      </div>
-    </div>
-
   </div>
-</div>
 </body>
 
 </html>

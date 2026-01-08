@@ -1989,5 +1989,59 @@ def get_patient_payment_history(id):
         print(f"History error: {e}")
         return jsonify([])    
 
+# --- OLD BALANCE / RECOVERY ROUTES ---
+
+@app.route('/api/old-balances', methods=['GET'])
+@role_required(['Admin'])
+def get_old_balances():
+    if not check_db(): return jsonify({"error": "Database error"}), 500
+    try:
+        cursor = mongo.db.old_balances.find().sort('created_at', -1)
+        balances = []
+        for b in cursor:
+            balances.append({
+                'id': str(b['_id']),
+                'name': b.get('name', ''),
+                'amount': b.get('amount', 0),
+                'commitment_date': b.get('commitment_date', ''),
+                'last_call_date': b.get('last_call_date', ''),
+                'note': b.get('note', '')
+            })
+        return jsonify(balances)
+    except Exception as e:
+        print(f"Old Balance Fetch Error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/old-balances', methods=['POST'])
+@role_required(['Admin'])
+def add_old_balance():
+    if not check_db(): return jsonify({"error": "Database error"}), 500
+    data = clean_input_data(request.json)
+    try:
+        record = {
+            'name': data.get('name'),
+            'amount': int(data.get('amount', 0)),
+            'commitment_date': data.get('commitment_date'),
+            'last_call_date': data.get('last_call_date'),
+            'note': data.get('note', ''),
+            'created_at': datetime.now(),
+            'added_by': session.get('username')
+        }
+        result = mongo.db.old_balances.insert_one(record)
+        return jsonify({"message": "Record added", "id": str(result.inserted_id)}), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/old-balances/<id>', methods=['DELETE'])
+@role_required(['Admin'])
+def delete_old_balance(id):
+    if not check_db(): return jsonify({"error": "Database error"}), 500
+    try:
+        mongo.db.old_balances.delete_one({'_id': ObjectId(id)})
+        return jsonify({"message": "Record deleted"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    
+
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
