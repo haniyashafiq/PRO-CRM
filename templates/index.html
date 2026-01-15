@@ -2047,8 +2047,10 @@
         const today = new Date();
         const daysDiff = Math.floor((today - admissionDate) / (1000 * 60 * 60 * 24));
         const daysElapsed = daysDiff >= 0 ? daysDiff : 0;
-        const daysDone = Math.min(daysElapsed, 90);
-        const daysProgress = `${daysDone}/90`;
+        
+        // FIX: Use actual elapsed days directly. 
+        // This will show "100/90" or "365/90" etc.
+        const daysProgress = `${daysElapsed}/90`;
 
         if (isAdmin) {
           tr.innerHTML = `<td class="px-3 py-2 font-medium text-gray-700 whitespace-nowrap text-xs">${serialNo}</td>
