@@ -17,9 +17,15 @@ load_dotenv()
 app = Flask(__name__)
 
 # --- CONFIGURATION ---
-mongo_uri = os.environ.get("MONGO_URI", "mongodb+srv://taha_admin:hospital123@cluster0.ukoxtzf.mongodb.net/hospital_crm_db?retryWrites=true&w=majority&appName=Cluster0&authSource=admin")
+mongo_uri = os.environ.get("MONGO_URI")
+if not mongo_uri:
+    raise ValueError("MONGO_URI environment variable is required")
 app.config["MONGO_URI"] = mongo_uri
-app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "a_very_secret_key_for_hms_pro")
+
+secret_key = os.environ.get("SECRET_KEY")
+if not secret_key:
+    raise ValueError("SECRET_KEY environment variable is required")
+app.config["SECRET_KEY"] = secret_key
 app.config["GMAIL_USER"] = os.environ.get("GMAIL_USER")
 app.config["GMAIL_APP_PASSWORD"] = os.environ.get("GMAIL_APP_PASSWORD")
 app.config["PASSWORD_RESET_EXPIRY_MINUTES"] = int(os.environ.get("PASSWORD_RESET_EXPIRY_MINUTES", "30"))
