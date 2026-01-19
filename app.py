@@ -2208,6 +2208,21 @@ def delete_old_balance(id):
         return jsonify({"message": "Record deleted"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+# --- HEALTH CHECK ENDPOINT (for cron-job.org) ---
+
+@app.route('/health', methods=['GET'])
+def health_check():
+    """Lightweight health check endpoint for uptime monitoring"""
+    try:
+        # Quick database ping to verify connection
+        if check_db():
+            mongo.db.command('ping')
+            return jsonify({"status": "ok", "database": "connected"}), 200
+        else:
+            return jsonify({"status": "error", "database": "disconnected"}), 503
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 503
     
 
 if __name__ == '__main__':
