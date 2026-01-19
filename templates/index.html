@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -200,6 +200,320 @@
           margin-bottom: 30px;
           font-size: 16px;
           line-height: 2;
+        }
+
+        /* === DISCHARGE SLIP A4 SINGLE PAGE OPTIMIZATION === */
+        @page discharge-slip-page {
+          size: A4 portrait;
+          margin: 10mm;
+        }
+
+        #printable-discharge-slip {
+          page: discharge-slip-page;
+          width: 190mm;
+          margin: 0 auto;
+          padding: 5px 15px;
+          font-size: 10px !important;
+          line-height: 1.3 !important;
+          text-align: center;
+        }
+
+        /* Center all direct children */
+        #printable-discharge-slip > * {
+          margin-left: auto;
+          margin-right: auto;
+        }
+
+        /* But keep text left-aligned inside elements */
+        #printable-discharge-slip table,
+        #printable-discharge-slip .bg-gray-50,
+        #printable-discharge-slip .grid {
+          text-align: left;
+        }
+
+        /* Allow content to flow naturally */
+        #printable-discharge-slip * {
+          page-break-inside: auto !important;
+          page-break-before: auto !important;
+          page-break-after: auto !important;
+        }
+
+        /* Only prevent breaks within individual table rows */
+        #printable-discharge-slip tr {
+          page-break-inside: avoid !important;
+        }
+
+        /* Header styling */
+        #printable-discharge-slip .border-b-4 {
+          padding-bottom: 8px !important;
+          margin-bottom: 0 !important;
+          border-width: 2px !important;
+          text-align: center !important;
+        }
+
+        #printable-discharge-slip h1 {
+          font-size: 20px !important;
+          margin: 0 0 4px 0 !important;
+          line-height: 1.2 !important;
+        }
+
+        #printable-discharge-slip h2 {
+          font-size: 14px !important;
+          margin: 0 0 4px 0 !important;
+          line-height: 1.2 !important;
+        }
+
+        #printable-discharge-slip h3 {
+          font-size: 12px !important;
+          margin-bottom: 6px !important;
+          margin-top: 0 !important;
+          line-height: 1.2 !important;
+        }
+
+        #printable-discharge-slip .text-xs {
+          font-size: 9px !important;
+          line-height: 1.3 !important;
+        }
+
+        #printable-discharge-slip .text-sm {
+          font-size: 10px !important;
+          line-height: 1.3 !important;
+        }
+
+        #printable-discharge-slip .text-lg {
+          font-size: 12px !important;
+        }
+
+        #printable-discharge-slip .text-2xl {
+          font-size: 16px !important;
+        }
+
+        #printable-discharge-slip .text-3xl {
+          font-size: 18px !important;
+        }
+
+        #printable-discharge-slip .text-5xl {
+          font-size: 18px !important;
+        }
+
+        /* Patient info section */
+        #printable-discharge-slip .bg-gray-50 {
+          padding: 10px !important;
+          margin-bottom: 0 !important;
+        }
+
+        #printable-discharge-slip .grid-cols-2 {
+          gap: 8px !important;
+        }
+
+        #printable-discharge-slip .gap-y-4 {
+          row-gap: 6px !important;
+        }
+
+        #printable-discharge-slip .gap-x-8 {
+          column-gap: 12px !important;
+        }
+
+        /* Tables with proper spacing */
+        #printable-discharge-slip table {
+          font-size: 10px !important;
+          margin-bottom: 0 !important;
+          line-height: 1.3 !important;
+          width: 100% !important;
+        }
+
+        #printable-discharge-slip thead th {
+          padding: 6px 8px !important;
+          line-height: 1.3 !important;
+        }
+
+        #printable-discharge-slip tbody td,
+        #printable-discharge-slip tfoot td {
+          padding: 5px 8px !important;
+          line-height: 1.3 !important;
+        }
+
+        /* Payment history rows */
+        #printable-discharge-slip #ds-payment-history-body td {
+          padding: 4px 8px !important;
+          font-size: 9px !important;
+          line-height: 1.3 !important;
+        }
+
+        /* Balance box - centered */
+        #printable-discharge-slip .bg-gray-900 {
+          padding: 8px 15px !important;
+          margin: 8px auto !important;
+        }
+
+        #printable-discharge-slip .flex.justify-end {
+          justify-content: center !important;
+        }
+
+        /* Signature section */
+        #printable-discharge-slip .flex.justify-between.items-end {
+          margin-top: 10px !important;
+          padding-top: 8px !important;
+        }
+
+        #printable-discharge-slip .mb-2.pb-4 {
+          margin-bottom: 2px !important;
+          padding-bottom: 8px !important;
+        }
+
+        #printable-discharge-slip .pt-6 {
+          padding-top: 0 !important;
+        }
+
+        #printable-discharge-slip .w-48 {
+          width: 140px !important;
+        }
+
+        /* Remove BR tags */
+        #printable-discharge-slip br {
+          display: none !important;
+        }
+
+        /* Spacing adjustments */
+        #printable-discharge-slip .gap-4 {
+          gap: 6px !important;
+        }
+
+        #printable-discharge-slip .mb-12 {
+          margin-bottom: 0 !important;
+        }
+
+        #printable-discharge-slip .mb-8 {
+          margin-bottom: 0 !important;
+        }
+
+        #printable-discharge-slip .mb-6 {
+          margin-bottom: 0 !important;
+        }
+
+        #printable-discharge-slip .mb-3 {
+          margin-bottom: 0 !important;
+        }
+
+        #printable-discharge-slip .mb-2 {
+          margin-bottom: 0 !important;
+        }
+
+        #printable-discharge-slip .mb-1 {
+          margin-bottom: 0 !important;
+        }
+
+        #printable-discharge-slip .mt-20 {
+          margin-top: 0 !important;
+        }
+
+        #printable-discharge-slip .mt-8 {
+          margin-top: 0 !important;
+        }
+
+        #printable-discharge-slip .mt-4 {
+          margin-top: 1px !important;
+        }
+
+        #printable-discharge-slip .mt-3 {
+          margin-top: 0 !important;
+        }
+
+        #printable-discharge-slip .mt-1 {
+          margin-bottom: 0 !important;
+        }
+
+        #printable-discharge-slip .pt-8 {
+          padding-top: 0 !important;
+        }
+
+        #printable-discharge-slip .pb-6 {
+          padding-bottom: 4px !important;
+        }
+
+        #printable-discharge-slip .pb-4 {
+          padding-bottom: 3px !important;
+        }
+
+        #printable-discharge-slip .pb-1 {
+          padding-bottom: 1px !important;
+        }
+
+        #printable-discharge-slip .p-8 {
+          padding: 8px !important;
+        }
+
+        #printable-discharge-slip .p-6 {
+          padding: 6px !important;
+        }
+
+        #printable-discharge-slip .p-4 {
+          padding: 5px !important;
+        }
+
+        #printable-discharge-slip .p-3 {
+          padding: 4px !important;
+        }
+
+        #printable-discharge-slip .p-2 {
+          padding: 3px !important;
+        }
+
+        #printable-discharge-slip .p-1 {
+          padding: 2px !important;
+        }
+
+        #printable-discharge-slip .pl-3 {
+          padding-left: 4px !important;
+        }
+
+        #printable-discharge-slip .w-48 p {
+          margin: 0 !important;
+          line-height: 1.3 !important;
+        }
+
+        /* Rounded corners */
+        #printable-discharge-slip .rounded-lg {
+          border-radius: 4px !important;
+        }
+
+        /* Compact borders */
+        #printable-discharge-slip .border {
+          border-width: 0.5px !important;
+        }
+
+        #printable-discharge-slip .border-b {
+          border-bottom-width: 0.5px !important;
+        }
+
+        #printable-discharge-slip .border-l-4 {
+          border-left-width: 2px !important;
+        }
+
+        #printable-discharge-slip .border-t {
+          border-top-width: 0.5px !important;
+        }
+
+        #printable-discharge-slip .border-t-2 {
+          border-top-width: 1px !important;
+        }
+
+        /* Icons smaller */
+        #printable-discharge-slip .fa-brain {
+          font-size: 32px !important;
+        }
+
+        /* Ensure no page breaks */
+        #printable-discharge-slip,
+        #printable-discharge-slip > div {
+          page-break-inside: avoid;
+          page-break-after: avoid;
+        }
+
+        /* Force content to fit on one page */
+        #printable-discharge-slip.print-active {
+          max-height: 277mm; /* A4 height */
+          overflow: hidden;
         }
 
         /* Original Profile Print Styles */
@@ -570,7 +884,12 @@
       }
 
       body {
-        font-family: 'DM Sans', 'Inter', system-ui, -apple-system, sans-serif;
+        font-family:
+          'DM Sans',
+          'Inter',
+          system-ui,
+          -apple-system,
+          sans-serif;
         color: var(--text-main);
         background: linear-gradient(180deg, #f7f9fa 0%, #f3f9f5 45%, #f8fcf9 100%);
       }
@@ -589,7 +908,9 @@
         border: 1px solid rgba(17, 24, 39, 0.04);
         overflow: hidden;
         background: linear-gradient(135deg, #ffffff 0%, #f7fdf9 100%);
-        transition: transform 0.25s ease, box-shadow 0.25s ease;
+        transition:
+          transform 0.25s ease,
+          box-shadow 0.25s ease;
       }
 
       .kpi-card:hover {
@@ -1106,6 +1427,7 @@
 
       function updateNavVisibility() {
         const navMap = {
+          'nav-patients': ['Admin'],
           'nav-canteen': ['Admin', 'Canteen'],
           'nav-expenses': ['Admin'],
           'nav-users': ['Admin'],
@@ -1114,6 +1436,7 @@
           'nav-attendance': ['Admin'],
           'nav-reports': ['Admin', 'General Staff', 'Doctor'],
           'nav-psych-sessions': ['Admin', 'Psychologist'],
+          'nav-prescription': ['Admin'],
         };
 
         for (const [id, roles] of Object.entries(navMap)) {
@@ -1231,6 +1554,10 @@
 
       window.navigateTo = function (viewId) {
         if (viewId === 'accounts-view' && currentUser.role !== 'Admin') {
+          showSuccessModal('Access Denied.', true);
+          return;
+        }
+        if (viewId === 'patients-view' && currentUser.role !== 'Admin') {
           showSuccessModal('Access Denied.', true);
           return;
         }
@@ -1561,8 +1888,8 @@
                 isTodayCol ? 'call-meeting-today' : ''
               }">
                             <button class="w-full h-7 rounded flex items-center justify-center text-[11px] ${cellClass} ${
-                isTodayCol ? 'call-meeting-today-button' : ''
-              }"
+                              isTodayCol ? 'call-meeting-today-button' : ''
+                            }"
                                     onclick="toggleCallMeeting('${encodeURIComponent(
                                       person.name
                                     )}', ${day})"
@@ -2717,8 +3044,8 @@
                   ? 'text-red-300 font-bold'
                   : 'text-red-600 font-bold'
                 : p.isDischarged
-                ? 'text-green-300 font-bold'
-                : 'text-green-600 font-bold';
+                  ? 'text-green-300 font-bold'
+                  : 'text-green-600 font-bold';
 
             const statusBadge = p.isDischarged
               ? '<span class="ml-2 text-[10px] uppercase font-bold bg-gray-200 text-gray-500 px-2 py-0.5 rounded">Discharged</span>'
@@ -2736,8 +3063,8 @@
                 <div class="font-bold">${formatCurrency(totalBill)}</div>
                 <div class="text-xs opacity-70">
                     (Fee: ${formatNumber(fee)} + Cant: ${formatNumber(
-              canteen
-            )} + Lnd: ${formatNumber(laundry)})
+                      canteen
+                    )} + Lnd: ${formatNumber(laundry)})
                 </div>
             </td>
 
@@ -3110,7 +3437,7 @@
       window.createUser = async function (e) {
         e.preventDefault();
         const f = e.target;
-        await fetch('/api/users', {
+        const res = await fetch('/api/users', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -3121,8 +3448,14 @@
             role: f['new-role'].value,
           }),
         });
-        renderUserManagement();
-        f.reset();
+        const data = await res.json();
+        if (res.ok) {
+          showSuccessModal('User created successfully');
+          renderUserManagement();
+          f.reset();
+        } else {
+          showSuccessModal(data.error || 'Failed to create user', true);
+        }
       };
       window.deleteUser = async function (id) {
         const confirmed = await showConfirmModal('Delete user?');
@@ -3964,8 +4297,8 @@
               <td class="px-4 py-3 text-gray-600">${formatDate(record.date)}</td>
               <td class="px-4 py-3">
                 <span class="px-2 py-1 rounded-full text-xs font-semibold ${modeClass}">${
-            record.payment_method
-          }</span>
+                  record.payment_method
+                }</span>
               </td>
               <td class="px-4 py-3 text-gray-600">${escapeHtml(record.recorded_by)}</td>
               <td class="px-4 py-3 text-center">${screenshotBtn}</td>
@@ -4142,8 +4475,8 @@
                 ? `<button class="text-blue-600 hover:text-blue-800 font-semibold" onclick="openPsychNoteModal('${s._id}', true)">Edit Note</button>`
                 : '<span class="text-gray-400 text-sm">Locked</span>'
               : canAddNote
-              ? `<button class="text-emerald-700 hover:text-emerald-900 font-semibold" onclick="openPsychNoteModal('${s._id}')">Add Note</button>`
-              : '-';
+                ? `<button class="text-emerald-700 hover:text-emerald-900 font-semibold" onclick="openPsychNoteModal('${s._id}')">Add Note</button>`
+                : '-';
 
             return `
               <tr class="hover:bg-emerald-50">
@@ -4566,8 +4899,8 @@
 
           let rowHtml = `<td class="${rowBaseClasses} sticky left-0 border-r z-20 whitespace-nowrap text-[0.65rem] max-w-[140px]" style="min-width: 100px;">
                          <span class="block truncate" title="${escapeHtml(p.name)}">${escapeHtml(
-            p.name
-          )}</span>
+                           p.name
+                         )}</span>
                        </td>`;
 
           columns.forEach((col) => {
@@ -5577,6 +5910,7 @@
           id="nav-patients"
           onclick="window.navigateTo('patients-view')"
           class="nav-item w-full text-left px-4 py-3 rounded-lg text-emerald-800 hover:bg-emerald-100/80 border border-transparent transition"
+          style="display: none"
         >
           Patients Directory
         </button>
@@ -5637,6 +5971,7 @@
           id="nav-prescription"
           onclick="openPrescriptionModal()"
           class="nav-item w-full text-left px-4 py-3 rounded-lg text-emerald-800 hover:bg-emerald-100/80 border border-transparent transition"
+          style="display: none"
         >
           <i class="fas fa-file-prescription mr-2"></i> Generate Prescription
         </button>
@@ -7583,7 +7918,10 @@
             </button>
             <button
               type="button"
-              onclick="document.getElementById('new-admission-modal').classList.add('hidden'); document.getElementById('new-admission-form').reset();"
+              onclick="
+                document.getElementById('new-admission-modal').classList.add('hidden');
+                document.getElementById('new-admission-form').reset();
+              "
               class="flex-1 bg-gray-200 text-gray-700 py-3 rounded-lg font-semibold hover:bg-gray-300 transition"
             >
               <i class="fas fa-times mr-2"></i>Cancel
@@ -7847,23 +8185,66 @@
     </script>
 
     <div id="printable-discharge-slip" class="hidden bg-white p-8 max-w-4xl mx-auto text-gray-800">
-      <div class="border-b-4 border-emerald-600 pb-6 mb-6 flex justify-between items-start">
-        <div class="flex items-center gap-4">
-          <i class="fas fa-brain text-5xl text-emerald-700"></i>
-          <div>
-            <h1 class="text-3xl font-bold text-gray-900 tracking-tight">PRO</h1>
-            <h2 class="text-lg font-bold text-emerald-700 tracking-wider">
+      <!-- TABLE Layout for absolute stability in Header -->
+      <table class="w-full border-b-2 border-emerald-600 mb-4" style="border-collapse: collapse">
+        <tr style="border: none !important">
+          <!-- Left: Logo -->
+          <td
+            class="text-left align-middle"
+            style="width: 20%; border: none !important; padding: 0 0 8px 0"
+          >
+            <i
+              class="fas fa-brain text-5xl text-emerald-700"
+              style="
+                background: transparent !important;
+                display: inline-block;
+                -webkit-print-color-adjust: exact;
+              "
+            ></i>
+          </td>
+
+          <!-- Center: Header Text -->
+          <td
+            class="text-center align-middle"
+            style="width: 60%; border: none !important; padding: 0 0 8px 0"
+          >
+            <h1
+              class="text-2xl font-bold text-gray-900 tracking-tight leading-none whitespace-nowrap"
+              style="margin: 0"
+            >
+              PRO
+            </h1>
+            <h2
+              class="text-xs font-bold text-emerald-700 tracking-wider leading-none mt-1 whitespace-nowrap"
+              style="margin: 4px 0 0 0"
+            >
               PAKISTAN RECOVERY OASIS
             </h2>
-            <p class="text-xs text-gray-500 mt-1">Addiction Treatment & Psychological Services</p>
-            <p class="text-xs text-gray-500">Abbottabad, Pakistan</p>
-          </div>
-        </div>
-        <div class="text-right">
-          <div class="text-2xl font-bold text-gray-800">DISCHARGE BILL</div>
-          <p class="text-sm text-gray-500 mt-1">Date: <span id="ds-date-print"></span></p>
-        </div>
-      </div>
+            <p
+              class="text-[9px] text-gray-500 mt-1 leading-tight whitespace-nowrap"
+              style="margin: 4px 0 0 0"
+            >
+              Addiction Treatment & Psychological Services
+            </p>
+            <p class="text-[9px] text-gray-500 leading-tight whitespace-nowrap" style="margin: 0">
+              Abbottabad, Pakistan
+            </p>
+          </td>
+
+          <!-- Right: Doc Info -->
+          <td
+            class="text-right align-middle"
+            style="width: 20%; border: none !important; padding: 0 0 8px 0"
+          >
+            <div class="text-xl font-bold text-gray-800 leading-tight whitespace-nowrap">
+              DISCHARGE BILL
+            </div>
+            <p class="text-[10px] text-gray-500 mt-1 whitespace-nowrap" style="margin: 4px 0 0 0">
+              Date: <span id="ds-date-print"></span>
+            </p>
+          </td>
+        </tr>
+      </table>
 
       <div class="bg-gray-50 rounded-lg p-6 mb-8 border border-gray-200">
         <div class="grid grid-cols-2 gap-y-4 gap-x-8 text-sm">
@@ -7889,7 +8270,7 @@
       <h3 class="font-bold text-lg text-gray-800 mb-3 border-l-4 border-emerald-500 pl-3">
         Account Summary
       </h3>
-      <table class="w-full text-sm border-collapse mb-8">
+      <table class="w-full text-sm border-collapse mb-3">
         <thead>
           <tr class="bg-emerald-600 text-white">
             <th class="p-3 text-left w-1/2">Description</th>
@@ -7915,32 +8296,30 @@
           </tr>
         </tbody>
       </table>
-      <br />
-      <br />
-      <br />
+
       <h3 class="font-bold text-lg text-gray-800 mb-3 border-l-4 border-blue-500 pl-3">
         Payment History (Credits)
       </h3>
       <table class="w-full text-sm border-collapse mb-2">
         <thead>
           <tr class="bg-gray-800 text-white text-xs uppercase">
-            <th class="p-2 text-left">Date</th>
-            <th class="p-2 text-left">Mode</th>
-            <th class="p-2 text-left">Note</th>
-            <th class="p-2 text-right">Amount Paid</th>
+            <th class="p-1 text-left">Date</th>
+            <th class="p-1 text-left">Mode</th>
+            <th class="p-1 text-left">Note</th>
+            <th class="p-1 text-right">Amount Paid</th>
           </tr>
         </thead>
         <tbody id="ds-payment-history-body" class="border border-gray-200"></tbody>
         <tfoot>
           <tr class="bg-gray-100 font-bold border-t-2 border-gray-300">
-            <td colspan="3" class="p-3 text-right">TOTAL RECEIVED:</td>
-            <td class="p-3 text-right font-mono text-green-700" id="ds-total-received">0</td>
+            <td colspan="3" class="p-1 text-right">TOTAL RECEIVED:</td>
+            <td class="p-1 text-right font-mono text-green-700" id="ds-total-received">0</td>
           </tr>
         </tfoot>
       </table>
 
-      <div class="flex justify-end mt-4 mb-12">
-        <div class="bg-gray-900 text-white p-4 rounded-lg shadow-lg text-center w-64">
+      <div class="flex justify-end mt-3 mb-6">
+        <div class="bg-gray-900 text-white p-3 rounded-lg shadow-lg text-center w-64">
           <div class="text-xs uppercase tracking-widest text-gray-400 mb-1">
             Net Payable Balance
           </div>
@@ -7949,14 +8328,14 @@
       </div>
 
       <div
-        class="flex justify-between items-end text-center text-sm text-gray-600 mt-20 pt-8 border-t border-gray-300"
+        class="flex justify-between items-end text-center text-sm text-gray-600 mt-8 pt-6 border-t border-gray-300"
       >
         <div class="w-48">
-          <p class="border-b border-gray-400 mb-2 pb-4"></p>
+          <p class="border-b border-gray-400 mb-1 pb-3"></p>
           <p class="font-bold">Accountant Signature</p>
         </div>
         <div class="w-48">
-          <p class="border-b border-gray-400 mb-2 pb-4"></p>
+          <p class="border-b border-gray-400 mb-1 pb-3"></p>
           <p class="font-bold">Admin / Authority</p>
         </div>
       </div>

@@ -1064,6 +1064,18 @@ def export_patients():
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             df.to_excel(writer, index=False, sheet_name='Patients')
+            
+            # Configure A4 page setup
+            worksheet = writer.sheets['Patients']
+            worksheet.page_setup.paperSize = 9  # A4
+            worksheet.page_setup.orientation = 'landscape'
+            worksheet.page_setup.fitToWidth = 1
+            worksheet.page_setup.fitToHeight = 0
+            worksheet.print_options.horizontalCentered = True
+            worksheet.page_margins.left = 0.5
+            worksheet.page_margins.right = 0.5
+            worksheet.page_margins.top = 0.75
+            worksheet.page_margins.bottom = 0.75
         
         output.seek(0)
         print("Excel file created successfully")
@@ -1515,7 +1527,21 @@ def export_payment_records():
             df = pd.DataFrame([{'Message': 'No payment records for selected range'}])
 
         output = io.BytesIO()
-        df.to_excel(output, index=False)
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='Payment Records')
+            
+            # Configure A4 page setup
+            worksheet = writer.sheets['Payment Records']
+            worksheet.page_setup.paperSize = 9  # A4
+            worksheet.page_setup.orientation = 'portrait'
+            worksheet.page_setup.fitToWidth = 1
+            worksheet.page_setup.fitToHeight = 0
+            worksheet.print_options.horizontalCentered = True
+            worksheet.page_margins.left = 0.75
+            worksheet.page_margins.right = 0.75
+            worksheet.page_margins.top = 0.75
+            worksheet.page_margins.bottom = 0.75
+        
         output.seek(0)
 
         filename = f"payment_records_{'six_months' if range_key == 'six_months' else 'current_month'}.xlsx"
@@ -1574,6 +1600,141 @@ def add_patient_payment(id):
         return jsonify({"message": "Payment recorded successfully", "new_total": new_total})
     except Exception as e:
         print(f"Payment Error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/patients/<id>/discharge-bill', methods=['GET'])
+@role_required(['Admin', 'Doctor'])
+def generate_discharge_bill(id):
+    """Generate a discharge bill for a patient - formatted to fit on one A4 page"""
+    if not check_db(): return jsonify({"error": "Database error"}), 500
+    
+    try:
+        from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
+        
+        # Fetch patient data
+        patient = mongo.db.patients.find_one({'_id': ObjectId(id)})
+        if not patient:
+            return jsonify({"error": "Patient not found"}), 404
+        
+        # Calculate canteen sales total for this patient
+        pipeline = [
+            {'$match': {'patient_id': ObjectId(id)}},
+            {'$group': {'_id': None, 'total_sales': {'$sum': '$amount'}}}
+        ]
+        canteen_result = list(mongo.db.canteen_sales.aggregate(pipeline))
+        canteen_total = canteen_result[0]['total_sales'] if canteen_result else 0
+        
+        # Parse financial data
+        monthly_fee = int(str(patient.get('monthlyFee', '0')).replace(',', '') or '0')
+        laundry_amount = patient.get('laundryAmount', 0) if patient.get('laundryStatus', False) else 0
+        received_amount = int(str(patient.get('receivedAmount', '0')).replace(',', '') or '0')
+        
+        # Calculate totals
+        total_charges = monthly_fee + canteen_total + laundry_amount
+        balance_due = total_charges - received_amount
+        
+        # Create discharge bill data
+        bill_data = {
+            'Patient Name': patient.get('name', ''),
+            'Father Name': patient.get('fatherName', ''),
+            'CNIC': patient.get('cnic', ''),
+            'Admission Date': patient.get('admissionDate', ''),
+            'Discharge Date': patient.get('dischargeDate', '') or datetime.now().strftime('%Y-%m-%d'),
+            'Monthly Fee': monthly_fee,
+            'Canteen Charges': canteen_total,
+            'Laundry Charges': laundry_amount,
+            'Total Charges': total_charges,
+            'Amount Paid': received_amount,
+            'Balance Due': balance_due
+        }
+        
+        # Create Excel workbook
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            # Create a DataFrame for the bill
+            df = pd.DataFrame([bill_data])
+            df.to_excel(writer, index=False, sheet_name='Discharge Bill')
+            
+            worksheet = writer.sheets['Discharge Bill']
+            
+            # Configure A4 page setup - Portrait, fit to one page
+            worksheet.page_setup.paperSize = 9  # A4
+            worksheet.page_setup.orientation = 'portrait'
+            worksheet.page_setup.fitToPage = True
+            worksheet.page_setup.fitToWidth = 1
+            worksheet.page_setup.fitToHeight = 1  # Force to fit on 1 page height
+            worksheet.page_setup.scale = None  # Allow auto-scaling
+            
+            # Set margins to maximize space
+            worksheet.page_margins.left = 0.5
+            worksheet.page_margins.right = 0.5
+            worksheet.page_margins.top = 0.5
+            worksheet.page_margins.bottom = 0.5
+            worksheet.page_margins.header = 0.3
+            worksheet.page_margins.footer = 0.3
+            
+            # Center horizontally on page
+            worksheet.print_options.horizontalCentered = True
+            
+            # Styling
+            thin_border = Border(
+                left=Side(style='thin'),
+                right=Side(style='thin'),
+                top=Side(style='thin'),
+                bottom=Side(style='thin')
+            )
+            
+            header_fill = PatternFill(start_color='366092', end_color='366092', fill_type='solid')
+            total_fill = PatternFill(start_color='D9E1F2', end_color='D9E1F2', fill_type='solid')
+            
+            # Apply styles to header row
+            for cell in worksheet[1]:
+                cell.font = Font(bold=True, size=10, color='FFFFFF')
+                cell.fill = header_fill
+                cell.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+                cell.border = thin_border
+            
+            # Apply styles to data rows
+            for row in worksheet.iter_rows(min_row=2, max_row=worksheet.max_row):
+                for cell in row:
+                    cell.font = Font(size=10)
+                    cell.alignment = Alignment(horizontal='left', vertical='center', wrap_text=True)
+                    cell.border = thin_border
+                    # Highlight financial totals
+                    if 'Total' in str(worksheet.cell(1, cell.column).value) or 'Balance' in str(worksheet.cell(1, cell.column).value):
+                        cell.fill = total_fill
+                        cell.font = Font(size=10, bold=True)
+            
+            # Auto-adjust column widths (but keep them reasonable for A4)
+            for column in worksheet.columns:
+                max_length = 0
+                column_letter = column[0].column_letter
+                for cell in column:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+                    except:
+                        pass
+                adjusted_width = min(max_length + 2, 25)  # Cap at 25 to fit on A4
+                worksheet.column_dimensions[column_letter].width = adjusted_width
+            
+            # Set row height
+            worksheet.row_dimensions[1].height = 30  # Header
+            for row in range(2, worksheet.max_row + 1):
+                worksheet.row_dimensions[row].height = 20
+        
+        output.seek(0)
+        
+        filename = f"discharge_bill_{patient.get('name', 'patient').replace(' ', '_')}.xlsx"
+        return send_file(
+            output,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name=filename
+        )
+    except Exception as e:
+        print(f"Discharge Bill Error: {e}")
         return jsonify({"error": str(e)}), 500
 
 
