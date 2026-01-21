@@ -91,6 +91,22 @@
         background-color: #dbeafe;
       }
 
+      /* --- EDITABLE CELL STYLES --- */
+      .editable-cell {
+        border: 1px solid transparent;
+        transition: all 0.2s;
+      }
+
+      .editable-cell:focus {
+        outline: 2px solid #3b82f6;
+        background-color: #eff6ff !important;
+        border-color: #3b82f6;
+      }
+
+      .editable-cell:hover {
+        border-color: #93c5fd;
+      }
+
       /* --- CALENDAR STYLES --- */
       .calendar-grid {
         display: grid;
@@ -3270,153 +3286,267 @@
       }
 
       async function renderCanteenBreakdown() {
+        // Initialize month/year selectors
+        const monthSelect = document.getElementById('canteen-month-select');
+        const yearSelect = document.getElementById('canteen-year-select');
+
+        const now = new Date();
+        const currentMonth = now.getMonth() + 1;
+        const currentYear = now.getFullYear();
+
+        // Set current month
+        monthSelect.value = currentMonth;
+
+        // Populate years (current year and 2 years back)
+        yearSelect.innerHTML = '';
+        for (let y = currentYear; y >= currentYear - 2; y--) {
+          const option = document.createElement('option');
+          option.value = y;
+          option.textContent = y;
+          yearSelect.appendChild(option);
+        }
+        yearSelect.value = currentYear;
+
+        // Load current month's data
+        await loadCanteenMonthlyTable();
+      }
+
+      window.loadCanteenMonthlyTable = async function loadCanteenMonthlyTable() {
         try {
-          const res = await fetch('/api/canteen/sales/breakdown');
-          const rawData = await res.json();
+          const month = document.getElementById('canteen-month-select').value;
+          const year = document.getElementById('canteen-year-select').value;
 
-          const tbody = document.getElementById('canteen-breakdown-body');
-          const patientSelect = document.getElementById('canteen-patient-select');
-          const dailyPanel = document.getElementById('canteen-daily-panel');
-          const breakdownContainer = document.getElementById('canteen-breakdown-table-container');
+          const res = await fetch(`/api/canteen/monthly-table?month=${month}&year=${year}`);
+          const data = await res.json();
+
           const monthDisplay = document.getElementById('canteen-month-display');
+          const tableHeader = document.getElementById('canteen-table-header');
+          const tableBody = document.getElementById('canteen-monthly-body');
 
-          // Display current month/date
-          const now = new Date();
-          const monthName = now.toLocaleString('en-US', { month: 'long', year: 'numeric' });
-          const todayDate = now.toLocaleDateString('en-US', {
-            weekday: 'long',
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric',
-          });
-          monthDisplay.innerHTML = `<strong>Month:</strong> ${monthName} | <strong>Today:</strong> ${todayDate}`;
+          // Update month display
+          const monthNames = [
+            'January',
+            'February',
+            'March',
+            'April',
+            'May',
+            'June',
+            'July',
+            'August',
+            'September',
+            'October',
+            'November',
+            'December',
+          ];
+          monthDisplay.textContent = `${monthNames[month - 1]} ${year} - ${data.daysInMonth} days`;
 
-          // Role-based access control
+          // Build table header
+          let headerHTML = `
+            <th class="px-4 py-3 text-left text-xs font-bold text-emerald-900 uppercase tracking-wider sticky left-0 bg-emerald-50 z-10" style="min-width: 150px;">Name</th>
+            <th class="px-4 py-3 text-center text-xs font-bold text-emerald-900 uppercase tracking-wider" style="min-width: 120px;">Old Balance</th>
+          `;
+
+          // Add day columns (1 to 28/29/30/31)
+          for (let day = 1; day <= data.daysInMonth; day++) {
+            headerHTML += `<th class="px-3 py-3 text-center text-xs font-bold text-emerald-900 uppercase" style="min-width: 60px;">${day}</th>`;
+          }
+
+          headerHTML += `
+            <th class="px-4 py-3 text-center text-xs font-bold text-emerald-900 uppercase tracking-wider" style="min-width: 100px;">Other</th>
+            <th class="px-4 py-3 text-center text-xs font-bold text-emerald-900 uppercase tracking-wider bg-emerald-100" style="min-width: 120px;">Month Total</th>
+            <th class="px-4 py-3 text-center text-xs font-bold text-emerald-900 uppercase tracking-wider bg-emerald-100" style="min-width: 120px;">Total</th>
+          `;
+
+          tableHeader.innerHTML = headerHTML;
+
+          // Build table rows
           const isAdmin = currentUser.role === 'Admin';
           const isCanteen = currentUser.role === 'Canteen';
 
-          // Show/hide panels based on role
-          if (isAdmin) {
-            // Admin only sees allowance breakdown, NO data entry
-            dailyPanel.style.display = 'none';
-            breakdownContainer.style.display = 'block';
-            breakdownContainer.classList.remove('lg:col-span-2');
-            breakdownContainer.classList.add('lg:col-span-3');
-          } else if (isCanteen) {
-            // Canteen staff only sees entry form, NOT the allowance table
-            dailyPanel.style.display = 'block';
-            breakdownContainer.style.display = 'none';
-            dailyPanel.classList.remove('lg:col-span-1');
-            dailyPanel.classList.add('lg:col-span-3');
-          } else {
-            // Other roles see nothing
-            dailyPanel.style.display = 'none';
-            breakdownContainer.style.display = 'none';
-          }
+          tableBody.innerHTML = '';
 
-          // --- 1. POPULATE PATIENT SEARCH (Active Patients Only) ---
-          const patientSearchInput = document.getElementById('canteen-patient-search');
-          const patientDropdown = document.getElementById('canteen-patient-dropdown');
+          data.patients.forEach((patient) => {
+            const row = document.createElement('tr');
+            row.className = patient.isDischarged ? 'bg-gray-50 opacity-60' : 'hover:bg-gray-50';
 
-          if (isCanteen && patientSearchInput && patientDropdown) {
-            // Sort active patients alphabetically
-            const activeForDropdown = rawData
-              .filter((p) => !p.isDischarged)
-              .sort((a, b) => a.name.localeCompare(b.name));
+            // Name cell with red background if month total exceeds old balance
+            const nameClass = patient.exceedsBalance
+              ? 'bg-red-500 text-white font-bold'
+              : 'bg-white';
+            const dischargedBadge = patient.isDischarged
+              ? '<span class="ml-2 text-[9px] uppercase font-bold bg-gray-300 text-gray-600 px-1.5 py-0.5 rounded">Discharged</span>'
+              : '';
 
-            // Store patient data for lookup and filtering
-            window.canteenPatients = activeForDropdown;
-            window.canteenPatientMap = {};
-            activeForDropdown.forEach((p) => {
-              window.canteenPatientMap[p.name] = p.id;
-            });
+            row.innerHTML = `
+              <td class="px-4 py-3 whitespace-nowrap sticky left-0 ${nameClass} z-10 border-r">
+                ${patient.name} ${dischargedBadge}
+              </td>
+              <td class="px-4 py-3 text-center font-semibold text-gray-700">
+                ${formatCurrency(patient.oldBalance)}
+              </td>
+            `;
 
-            // Setup searchable dropdown
-            setupSearchableDropdown(patientSearchInput, patientDropdown, activeForDropdown);
-          }
+            // Add day cells (editable)
+            for (let day = 1; day <= data.daysInMonth; day++) {
+              const amount = patient.dailyEntries[day] || '';
+              const displayValue = amount ? formatCurrency(amount) : '';
 
-          // --- 2. RENDER ALLOWANCE TABLE (Admin Only) ---
-          if (isAdmin) {
-            const active = rawData.filter((p) => !p.isDischarged);
-            const discharged = rawData.filter((p) => p.isDischarged);
-            const breakdown = [...active, ...discharged];
+              // Determine if cell is editable
+              const isEditable = isAdmin || (isCanteen && !amount);
+              const editableAttr = isEditable ? 'contenteditable="true"' : '';
+              const cellClass = isEditable
+                ? 'editable-cell cursor-text hover:bg-blue-50'
+                : 'bg-gray-100';
 
-            tbody.innerHTML = '';
+              row.innerHTML += `
+                <td class="px-2 py-2 text-center text-sm ${cellClass}" 
+                    ${editableAttr}
+                    data-patient-id="${patient.id}"
+                    data-day="${day}"
+                    data-entry-type="daily"
+                    data-original="${amount}"
+                    onblur="saveCanteenEntry(this, ${month}, ${year})"
+                    onkeydown="handleCellKeydown(event)">
+                  ${displayValue}
+                </td>
+              `;
+            }
 
-            breakdown.forEach((p) => {
-              // Balance color logic
-              let balanceClass =
-                p.remainingBalance < 0 ? 'text-red-600 font-bold' : 'text-green-600 font-bold';
+            // Other column (editable)
+            const otherAmount = patient.other || '';
+            const otherDisplay = otherAmount ? formatCurrency(otherAmount) : '';
+            const otherEditable = isAdmin || (isCanteen && !otherAmount);
+            const otherEditableAttr = otherEditable ? 'contenteditable="true"' : '';
+            const otherCellClass = otherEditable
+              ? 'editable-cell cursor-text hover:bg-blue-50'
+              : 'bg-gray-100';
 
-              // Row style logic
-              const rowClass = p.isDischarged
-                ? 'discharged-row border-b border-gray-100'
-                : 'hover:bg-gray-50 border-b transition';
+            row.innerHTML += `
+              <td class="px-3 py-2 text-center text-sm font-medium ${otherCellClass}" 
+                  ${otherEditableAttr}
+                  data-patient-id="${patient.id}"
+                  data-entry-type="other"
+                  data-original="${otherAmount}"
+                  onblur="saveCanteenEntry(this, ${month}, ${year})"
+                  onkeydown="handleCellKeydown(event)">
+                ${otherDisplay}
+              </td>
+            `;
 
-              // If discharged, dim the balance text too
-              if (p.isDischarged) {
-                balanceClass =
-                  p.remainingBalance < 0 ? 'text-red-300 font-bold' : 'text-green-300 font-bold';
-              }
+            // Month Total (calculated, not editable)
+            row.innerHTML += `
+              <td class="px-4 py-3 text-center font-bold text-gray-900 bg-emerald-50">
+                ${formatCurrency(patient.monthTotal)}
+              </td>
+            `;
 
-              const statusBadge = p.isDischarged
-                ? '<span class="ml-2 text-[10px] uppercase font-bold bg-gray-200 text-gray-500 px-2 py-0.5 rounded">Discharged</span>'
-                : '';
+            // Total (all-time, not editable)
+            row.innerHTML += `
+              <td class="px-4 py-3 text-center font-bold text-gray-900 bg-emerald-50">
+                ${formatCurrency(patient.total)}
+              </td>
+            `;
 
-              tbody.innerHTML += `
-              <tr class="${rowClass}">
-                  <td class="px-6 py-4 whitespace-nowrap">
-                      ${p.name} ${statusBadge}
-                  </td>
-                  <td class="px-6 py-4 text-gray-500 whitespace-nowrap">
-                      ${formatCurrency(p.monthlyAllowance)}
-                  </td>
-                  <td class="px-6 py-4 text-gray-500 whitespace-nowrap text-sm">
-                      ${formatCurrency(p.dailyAllowance)}
-                  </td>
-                  <td class="px-6 py-4 whitespace-nowrap font-medium">
-                      ${formatCurrency(p.monthlySales)}
-                  </td>
-                  <td class="px-6 py-4 ${balanceClass} whitespace-nowrap">
-                      ${formatCurrency(p.remainingBalance)}
-                  </td>
-              </tr>`;
-            });
-          }
+            tableBody.appendChild(row);
+          });
         } catch (e) {
-          console.error(e);
+          console.error('Error loading canteen table:', e);
+          alert('Failed to load canteen data');
         }
-      }
+      };
 
-      window.recordCanteenSale = async function (e) {
-        e.preventDefault();
+      window.handleCellKeydown = function handleCellKeydown(event) {
+        // Allow Enter to save and move to next cell
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          event.target.blur();
+        }
 
-        // Get patient ID from search input
-        const patientSearchInput = document.getElementById('canteen-patient-search');
-        const patientName = patientSearchInput ? patientSearchInput.value : '';
-        const patientId = window.canteenPatientMap ? window.canteenPatientMap[patientName] : null;
+        // Only allow numbers, backspace, delete, arrows
+        const allowedKeys = [
+          'Backspace',
+          'Delete',
+          'ArrowLeft',
+          'ArrowRight',
+          'ArrowUp',
+          'ArrowDown',
+          'Tab',
+        ];
+        if (!allowedKeys.includes(event.key) && (event.key < '0' || event.key > '9')) {
+          event.preventDefault();
+        }
+      };
 
-        if (!patientId) {
-          alert('Please select a valid patient from the list');
+      window.saveCanteenEntry = async function saveCanteenEntry(cell, month, year) {
+        const patientId = cell.dataset.patientId;
+        const entryType = cell.dataset.entryType;
+        const originalValue = cell.dataset.original || '';
+
+        // Get the new value (remove currency formatting)
+        let newValue = cell.textContent.trim().replace(/[^\d]/g, '');
+
+        // If empty, treat as 0
+        if (!newValue) {
+          newValue = '0';
+        }
+
+        const newAmount = parseInt(newValue);
+        const originalAmount = originalValue ? parseInt(originalValue) : 0;
+
+        // If value hasn't changed, do nothing
+        if (newAmount === originalAmount) {
+          cell.textContent = originalAmount ? formatCurrency(originalAmount) : '';
           return;
         }
 
-        const item = document.getElementById('canteen-item-input').value;
-        const amount = document.getElementById('canteen-amount-input').value;
-
-        const res = await fetch('/api/canteen/sales', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ patient_id: patientId, item, amount: parseInt(amount) }),
-        });
-
-        if (res.ok) {
-          showSuccessModal('Sale Recorded');
-          renderCanteenBreakdown();
-          e.target.reset();
+        // Build the date
+        let entryDate;
+        if (entryType === 'daily') {
+          const day = parseInt(cell.dataset.day);
+          entryDate = new Date(year, month - 1, day);
         } else {
-          alert('Failed to record sale');
+          // For "other" column, use first day of month
+          entryDate = new Date(year, month - 1, 1);
         }
+
+        try {
+          const res = await fetch('/api/canteen/daily-entry', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              patient_id: patientId,
+              date: entryDate.toISOString(),
+              amount: newAmount,
+              entry_type: entryType,
+              item: entryType === 'other' ? 'Other adjustment' : 'Daily canteen',
+            }),
+          });
+
+          if (res.ok) {
+            // Update the cell with formatted value
+            cell.textContent = newAmount ? formatCurrency(newAmount) : '';
+            cell.dataset.original = newAmount;
+
+            // Reload the table to update totals
+            await loadCanteenMonthlyTable();
+          } else {
+            const error = await res.json();
+            alert(error.error || 'Failed to save entry');
+            // Revert to original value
+            cell.textContent = originalAmount ? formatCurrency(originalAmount) : '';
+          }
+        } catch (e) {
+          console.error('Error saving entry:', e);
+          alert('Failed to save entry');
+          // Revert to original value
+          cell.textContent = originalAmount ? formatCurrency(originalAmount) : '';
+        }
+      };
+
+      window.recordCanteenSale = async function (e) {
+        // Legacy function - kept for compatibility but not used in new system
+        e.preventDefault();
+        alert('Please use the monthly table to record canteen entries.');
       };
 
       // --- USER MANAGEMENT ---
@@ -6859,93 +6989,59 @@
       </section>
 
       <section id="canteen-view" class="view-section hidden p-4 md:p-8">
-        <div class="mb-6">
-          <h2 class="text-2xl font-bold text-green-900">
-            <i class="fas fa-utensils mr-2"></i>Canteen Management
-          </h2>
-          <p class="text-sm text-gray-500" id="canteen-month-display">
-            <!-- Month/Date will be displayed here -->
-          </p>
+        <div class="mb-6 flex justify-between items-center">
+          <div>
+            <h2 class="text-2xl font-bold text-green-900">
+              <i class="fas fa-utensils mr-2"></i>Canteen Management
+            </h2>
+            <p class="text-sm text-gray-500 mt-1">Daily spending tracker with monthly totals</p>
+          </div>
+          <!-- Month/Year Selector -->
+          <div class="flex gap-2 items-center">
+            <label class="text-sm font-medium text-gray-700">Month:</label>
+            <select id="canteen-month-select" class="border rounded px-3 py-2 text-sm">
+              <option value="1">January</option>
+              <option value="2">February</option>
+              <option value="3">March</option>
+              <option value="4">April</option>
+              <option value="5">May</option>
+              <option value="6">June</option>
+              <option value="7">July</option>
+              <option value="8">August</option>
+              <option value="9">September</option>
+              <option value="10">October</option>
+              <option value="11">November</option>
+              <option value="12">December</option>
+            </select>
+            <select id="canteen-year-select" class="border rounded px-3 py-2 text-sm">
+              <!-- Years will be populated by JavaScript -->
+            </select>
+            <button
+              onclick="loadCanteenMonthlyTable()"
+              class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded text-sm font-medium transition"
+            >
+              Load
+            </button>
+          </div>
         </div>
 
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <!-- Daily Entry Panel - For Canteen Staff -->
-          <div id="canteen-daily-panel" class="col-span-1 bg-white p-6 rounded shadow">
-            <h3 class="font-bold mb-4 text-lg">Daily Canteen Entry</h3>
-            <p class="text-sm text-gray-600 mb-4">Enter today's canteen items for patients</p>
-            <form onsubmit="recordCanteenSale(event)">
-              <label class="text-sm font-medium text-gray-700 mb-1 block">Search Patient</label>
-              <div class="searchable-dropdown mb-2">
-                <input
-                  id="canteen-patient-search"
-                  class="w-full border p-2 rounded"
-                  placeholder="Type to search or click to see all patients..."
-                  autocomplete="off"
-                  required
-                />
-                <div
-                  id="canteen-patient-dropdown"
-                  class="searchable-dropdown-list"
-                  style="display: none"
-                ></div>
-              </div>
-              <input
-                id="canteen-item-input"
-                class="w-full border p-2 mb-2 rounded"
-                placeholder="Item (e.g., Tea, Snacks)"
-                required
-              />
-              <input
-                id="canteen-amount-input"
-                type="number"
-                class="w-full border p-2 mb-2 rounded"
-                placeholder="Amount (PKR)"
-                required
-              />
-              <button
-                class="w-full bg-blue-600 hover:bg-blue-700 text-white p-2 rounded transition font-semibold shadow-md"
-              >
-                Record Entry
-              </button>
-            </form>
+        <!-- Monthly Table -->
+        <div class="bg-white rounded shadow overflow-x-auto">
+          <div class="bg-gradient-to-r from-emerald-700 to-emerald-600 text-white px-6 py-3">
+            <h3 class="font-semibold text-lg">Monthly Canteen Tracker</h3>
+            <p class="text-xs opacity-90" id="canteen-month-display">Loading...</p>
           </div>
-
-          <!-- Allowance Overview Table - Admin Only -->
-          <div
-            id="canteen-breakdown-table-container"
-            class="col-span-2 kpi-card"
-            style="padding: 0; border-color: rgba(16, 185, 129, 0.2)"
-          >
-            <div class="bg-gradient-to-r from-emerald-700 to-emerald-600 text-white px-6 py-3">
-              <h3 class="font-semibold text-lg">Monthly Allowance Overview</h3>
-              <p class="text-xs opacity-90">Consumed vs Remaining Balance</p>
-            </div>
-            <div class="overflow-x-auto">
-              <table class="min-w-full divide-y divide-emerald-100">
-                <thead class="bg-emerald-50">
-                  <tr>
-                    <th
-                      class="px-6 py-3 text-left whitespace-nowrap font-semibold text-emerald-800"
-                    >
-                      Patient
-                    </th>
-                    <th class="px-6 py-3 whitespace-nowrap font-semibold text-emerald-800">
-                      Monthly
-                    </th>
-                    <th class="px-6 py-3 whitespace-nowrap font-semibold text-emerald-800">
-                      Daily
-                    </th>
-                    <th class="px-6 py-3 whitespace-nowrap font-semibold text-emerald-800">
-                      Consumed
-                    </th>
-                    <th class="px-6 py-3 whitespace-nowrap font-semibold text-emerald-800">
-                      Remaining
-                    </th>
-                  </tr>
-                </thead>
-                <tbody id="canteen-breakdown-body" class="divide-y divide-emerald-50"></tbody>
-              </table>
-            </div>
+          <div class="overflow-x-auto" style="max-height: 600px">
+            <table id="canteen-monthly-table" class="min-w-full divide-y divide-gray-200">
+              <thead class="bg-emerald-50 sticky top-0">
+                <tr id="canteen-table-header">
+                  <!-- Headers will be dynamically generated -->
+                </tr>
+              </thead>
+              <tbody id="canteen-monthly-body" class="divide-y divide-gray-100">
+                <!-- Rows will be dynamically generated -->
+              </tbody>
+            </table>
           </div>
         </div>
       </section>

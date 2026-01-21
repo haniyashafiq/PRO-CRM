@@ -834,6 +834,210 @@ def get_canteen_sales_history():
         print(f"Sales History Error: {e}")
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/canteen/monthly-table', methods=['GET'])
+@role_required(['Admin', 'Canteen'])
+def get_canteen_monthly_table():
+    """Get monthly canteen table data with daily columns"""
+    if not check_db(): return jsonify({"error": "Database error"}), 500
+    
+    try:
+        # Get month and year from query params, default to current month
+        month = int(request.args.get('month', datetime.now().month))
+        year = int(request.args.get('year', datetime.now().year))
+        
+        # Calculate start and end of requested month
+        start_of_month = datetime(year, month, 1, 0, 0, 0)
+        if month == 12:
+            end_of_month = datetime(year + 1, 1, 1, 0, 0, 0)
+        else:
+            end_of_month = datetime(year, month + 1, 1, 0, 0, 0)
+        
+        days_in_month = (end_of_month - start_of_month).days
+        
+        # Get all patients with their allowances
+        patients_cursor = mongo.db.patients.find({}, {
+            'name': 1, 
+            'monthlyAllowance': 1, 
+            'isDischarged': 1
+        }).sort('name', 1)
+        
+        patients_data = []
+        
+        for patient in patients_cursor:
+            patient_id = patient['_id']
+            patient_name = patient['name']
+            allowance_str = patient.get('monthlyAllowance', '0')
+            # Handle empty string or None
+            if not allowance_str or allowance_str.strip() == '':
+                allowance_str = '0'
+            monthly_allowance = int(allowance_str.replace(',', ''))
+            is_discharged = patient.get('isDischarged', False)
+            
+            # Calculate Old Balance (previous months' allowances - previous spending + adjustments)
+            # Previous months means everything before start_of_month
+            previous_sales_pipeline = [
+                {'$match': {
+                    'patient_id': patient_id,
+                    'date': {'$lt': start_of_month},
+                    'entry_type': {'$ne': 'other'}  # Exclude "Other" column entries
+                }},
+                {'$group': {'_id': None, 'total': {'$sum': '$amount'}}}
+            ]
+            previous_sales_result = list(mongo.db.canteen_sales.aggregate(previous_sales_pipeline))
+            previous_sales_total = previous_sales_result[0]['total'] if previous_sales_result else 0
+            
+            # Get previous adjustments from "Other" column
+            previous_adjustments_pipeline = [
+                {'$match': {
+                    'patient_id': patient_id,
+                    'date': {'$lt': start_of_month},
+                    'entry_type': 'other'
+                }},
+                {'$group': {'_id': None, 'total': {'$sum': '$amount'}}}
+            ]
+            previous_adjustments_result = list(mongo.db.canteen_sales.aggregate(previous_adjustments_pipeline))
+            previous_adjustments = previous_adjustments_result[0]['total'] if previous_adjustments_result else 0
+            
+            # Count number of previous months since admission
+            admission_date_str = mongo.db.patients.find_one({'_id': patient_id}, {'admissionDate': 1}).get('admissionDate')
+            if admission_date_str:
+                try:
+                    admission_date = datetime.fromisoformat(admission_date_str.replace('Z', '+00:00'))
+                    months_count = (start_of_month.year - admission_date.year) * 12 + (start_of_month.month - admission_date.month)
+                    if months_count < 0:
+                        months_count = 0
+                except:
+                    months_count = 0
+            else:
+                months_count = 0
+            
+            # Old Balance = (previous months' allowances + previous adjustments - previous sales) + current month allowance
+            previous_allowances_total = monthly_allowance * months_count
+            old_balance = previous_allowances_total + previous_adjustments - previous_sales_total + monthly_allowance
+            
+            # Get current month's daily entries (1-31)
+            daily_entries = {}
+            current_month_sales = mongo.db.canteen_sales.find({
+                'patient_id': patient_id,
+                'date': {'$gte': start_of_month, '$lt': end_of_month},
+                'entry_type': {'$ne': 'other'}
+            })
+            
+            for sale in current_month_sales:
+                day = sale['date'].day
+                amount = sale.get('amount', 0)
+                if day in daily_entries:
+                    daily_entries[day] += amount
+                else:
+                    daily_entries[day] = amount
+            
+            # Get "Other" column entry for current month
+            other_entry_result = mongo.db.canteen_sales.find_one({
+                'patient_id': patient_id,
+                'date': {'$gte': start_of_month, '$lt': end_of_month},
+                'entry_type': 'other'
+            })
+            other_amount = other_entry_result['amount'] if other_entry_result else 0
+            
+            # Calculate Month Total (sum of daily entries + other)
+            month_total = sum(daily_entries.values()) + other_amount
+            
+            # Calculate Total (all-time spending)
+            all_time_pipeline = [
+                {'$match': {
+                    'patient_id': patient_id,
+                    'entry_type': {'$ne': 'other'}
+                }},
+                {'$group': {'_id': None, 'total': {'$sum': '$amount'}}}
+            ]
+            all_time_result = list(mongo.db.canteen_sales.aggregate(all_time_pipeline))
+            total_spent = all_time_result[0]['total'] if all_time_result else 0
+            
+            patients_data.append({
+                'id': str(patient_id),
+                'name': patient_name,
+                'oldBalance': old_balance,
+                'dailyEntries': daily_entries,
+                'other': other_amount,
+                'monthTotal': month_total,
+                'total': total_spent,
+                'isDischarged': is_discharged,
+                'exceedsBalance': month_total > old_balance
+            })
+        
+        return jsonify({
+            'month': month,
+            'year': year,
+            'daysInMonth': days_in_month,
+            'patients': patients_data
+        })
+    except Exception as e:
+        print(f"Monthly Table Error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/canteen/daily-entry', methods=['POST'])
+@role_required(['Admin', 'Canteen'])
+def save_canteen_daily_entry():
+    """Save or update a daily canteen entry"""
+    if not check_db(): return jsonify({"error": "Database error"}), 500
+    
+    data = clean_input_data(request.json)
+    if not all(k in data for k in ['patient_id', 'date', 'amount', 'entry_type']):
+        return jsonify({"error": "Missing required fields"}), 400
+    
+    try:
+        patient_id = ObjectId(data['patient_id'])
+        entry_date = datetime.fromisoformat(data['date'].replace('Z', '+00:00'))
+        amount = int(data['amount'])
+        entry_type = data['entry_type']  # 'daily' or 'other'
+        
+        # Check if entry already exists
+        existing_entry = mongo.db.canteen_sales.find_one({
+            'patient_id': patient_id,
+            'date': entry_date,
+            'entry_type': entry_type
+        })
+        
+        # Role-based permission check
+        user_role = session.get('role')
+        username = session.get('username', 'Unknown')
+        
+        if existing_entry:
+            # Entry exists - check if user can edit
+            if user_role == 'Canteen':
+                # Canteen staff cannot edit existing entries
+                return jsonify({"error": "Canteen staff cannot edit existing entries"}), 403
+            elif user_role == 'Admin':
+                # Admin can edit
+                mongo.db.canteen_sales.update_one(
+                    {'_id': existing_entry['_id']},
+                    {'$set': {
+                        'amount': amount,
+                        'edited_by': username,
+                        'edited_at': datetime.now()
+                    }}
+                )
+                return jsonify({"message": "Entry updated", "id": str(existing_entry['_id'])}), 200
+        else:
+            # New entry - both Admin and Canteen can add
+            new_entry = {
+                'patient_id': patient_id,
+                'date': entry_date,
+                'amount': amount,
+                'entry_type': entry_type,
+                'item': data.get('item', ''),  # Optional item description
+                'recorded_by': username,
+                'created_at': datetime.now()
+            }
+            result = mongo.db.canteen_sales.insert_one(new_entry)
+            return jsonify({"message": "Entry recorded", "id": str(result.inserted_id)}), 201
+            
+    except ValueError as ve:
+        return jsonify({"error": f"Invalid data format: {str(ve)}"}), 400
+    except Exception as e:
+        print(f"Daily Entry Error: {e}")
+        return jsonify({"error": str(e)}), 500
+
 # --- EXPENSES APIs ---
 
 @app.route('/api/expenses', methods=['GET'])
