@@ -855,13 +855,17 @@ def get_canteen_monthly_table():
         days_in_month = (end_of_month - start_of_month).days
         
         # Get all patients with their allowances
-        patients_cursor = mongo.db.patients.find({}, {
+        patients_list = list(mongo.db.patients.find({}, {
             'name': 1,
             'monthlyAllowance': 1,
-            'isDischarged': 1
-        }).sort('name', 1)
+            'isDischarged': 1,
+            'admissionDate': 1
+        }).sort('name', 1))
         
-        patients_data = []
+        if not patients_list:
+            return jsonify({'month': month, 'year': year, 'daysInMonth': days_in_month, 'patients': []})
+        
+        patient_ids = [p['_id'] for p in patients_list]
         
         def _safe_int(raw_val: object) -> int:
             """Best-effort int conversion that strips non-digits."""
@@ -870,44 +874,79 @@ def get_canteen_monthly_table():
                 return int(cleaned) if cleaned not in ('', '-') else 0
             except Exception:
                 return 0
+        
+        # BATCH QUERY: Get all previous sales for all patients at once
+        previous_sales_agg = list(mongo.db.canteen_sales.aggregate([
+            {'$match': {
+                'patient_id': {'$in': patient_ids},
+                'date': {'$lt': start_of_month},
+                '$or': [
+                    {'entry_type': {'$exists': False}},
+                    {'entry_type': {'$ne': 'other'}}
+                ]
+            }},
+            {'$group': {'_id': '$patient_id', 'total': {'$sum': '$amount'}}}
+        ]))
+        previous_sales_map = {str(item['_id']): item['total'] for item in previous_sales_agg}
+        
+        # BATCH QUERY: Get all previous adjustments
+        previous_adj_agg = list(mongo.db.canteen_sales.aggregate([
+            {'$match': {
+                'patient_id': {'$in': patient_ids},
+                'date': {'$lt': start_of_month},
+                'entry_type': 'other'
+            }},
+            {'$group': {'_id': '$patient_id', 'total': {'$sum': '$amount'}}}
+        ]))
+        previous_adj_map = {str(item['_id']): item['total'] for item in previous_adj_agg}
+        
+        # BATCH QUERY: Get all current month daily sales
+        current_month_sales = list(mongo.db.canteen_sales.find({
+            'patient_id': {'$in': patient_ids},
+            'date': {'$gte': start_of_month, '$lt': end_of_month},
+            '$or': [
+                {'entry_type': {'$exists': False}},
+                {'entry_type': {'$ne': 'other'}}
+            ]
+        }))
+        
+        # BATCH QUERY: Get all "other" entries for current month
+        other_entries = list(mongo.db.canteen_sales.find({
+            'patient_id': {'$in': patient_ids},
+            'date': {'$gte': start_of_month, '$lt': end_of_month},
+            'entry_type': 'other'
+        }))
+        other_map = {str(item['patient_id']): item['amount'] for item in other_entries}
+        
+        # BATCH QUERY: Get all-time totals for all patients
+        all_time_agg = list(mongo.db.canteen_sales.aggregate([
+            {'$match': {
+                'patient_id': {'$in': patient_ids},
+                '$or': [
+                    {'entry_type': {'$exists': False}},
+                    {'entry_type': {'$ne': 'other'}}
+                ]
+            }},
+            {'$group': {'_id': '$patient_id', 'total': {'$sum': '$amount'}}}
+        ]))
+        all_time_map = {str(item['_id']): item['total'] for item in all_time_agg}
+        
+        patients_data = []
 
-        for patient in patients_cursor:
+        for patient in patients_list:
             patient_id = patient['_id']
+            patient_id_str = str(patient_id)
             patient_name = patient.get('name', 'Unknown')
             monthly_allowance = _safe_int(patient.get('monthlyAllowance', 0))
             is_discharged = patient.get('isDischarged', False)
             
-            # Calculate Old Balance (previous months' allowances - previous spending + adjustments)
-            # Previous months means everything before start_of_month
-            # Note: Old records don't have entry_type, treat them as daily entries (not 'other')
-            previous_sales_pipeline = [
-                {'$match': {
-                    'patient_id': patient_id,
-                    'date': {'$lt': start_of_month},
-                    '$or': [
-                        {'entry_type': {'$exists': False}},  # Old records without entry_type
-                        {'entry_type': {'$ne': 'other'}}      # New records that are not 'other'
-                    ]
-                }},
-                {'$group': {'_id': None, 'total': {'$sum': '$amount'}}}
-            ]
-            previous_sales_result = list(mongo.db.canteen_sales.aggregate(previous_sales_pipeline))
-            previous_sales_total = previous_sales_result[0]['total'] if previous_sales_result else 0
-            
-            # Get previous adjustments from "Other" column
-            previous_adjustments_pipeline = [
-                {'$match': {
-                    'patient_id': patient_id,
-                    'date': {'$lt': start_of_month},
-                    'entry_type': 'other'
-                }},
-                {'$group': {'_id': None, 'total': {'$sum': '$amount'}}}
-            ]
-            previous_adjustments_result = list(mongo.db.canteen_sales.aggregate(previous_adjustments_pipeline))
-            previous_adjustments = previous_adjustments_result[0]['total'] if previous_adjustments_result else 0
+            # Get data from batch queries
+            previous_sales_total = previous_sales_map.get(patient_id_str, 0)
+            previous_adjustments = previous_adj_map.get(patient_id_str, 0)
             
             # Count number of previous months since admission
-            admission_date_str = mongo.db.patients.find_one({'_id': patient_id}, {'admissionDate': 1}).get('admissionDate')
+            admission_date_str = patient.get('admissionDate')
+            months_count = 0
             if admission_date_str:
                 try:
                     admission_date = datetime.fromisoformat(admission_date_str.replace('Z', '+00:00'))
@@ -916,58 +955,30 @@ def get_canteen_monthly_table():
                         months_count = 0
                 except:
                     months_count = 0
-            else:
-                months_count = 0
             
             # Old Balance = (previous months' allowances + previous adjustments - previous sales) + current month allowance
             previous_allowances_total = monthly_allowance * months_count
             old_balance = previous_allowances_total + previous_adjustments - previous_sales_total + monthly_allowance
             
-            # Get current month's daily entries (1-31)
-            # Note: Old records don't have entry_type, include them as daily entries
+            # Build daily entries from batch query results
             daily_entries = {}
-            current_month_sales = mongo.db.canteen_sales.find({
-                'patient_id': patient_id,
-                'date': {'$gte': start_of_month, '$lt': end_of_month},
-                '$or': [
-                    {'entry_type': {'$exists': False}},  # Old records
-                    {'entry_type': {'$ne': 'other'}}      # New daily records
-                ]
-            })
-            
             for sale in current_month_sales:
-                day = sale['date'].day
-                amount = sale.get('amount', 0)
-                if day in daily_entries:
-                    daily_entries[day] += amount
-                else:
-                    daily_entries[day] = amount
+                if str(sale['patient_id']) == patient_id_str:
+                    day = sale['date'].day
+                    amount = sale.get('amount', 0)
+                    if day in daily_entries:
+                        daily_entries[day] += amount
+                    else:
+                        daily_entries[day] = amount
             
-            # Get "Other" column entry for current month
-            other_entry_result = mongo.db.canteen_sales.find_one({
-                'patient_id': patient_id,
-                'date': {'$gte': start_of_month, '$lt': end_of_month},
-                'entry_type': 'other'
-            })
-            other_amount = other_entry_result['amount'] if other_entry_result else 0
+            # Get "other" amount from batch query
+            other_amount = other_map.get(patient_id_str, 0)
             
             # Calculate Month Total (sum of daily entries + other)
             month_total = sum(daily_entries.values()) + other_amount
             
-            # Calculate Total (all-time spending)
-            # Note: Include old records without entry_type
-            all_time_pipeline = [
-                {'$match': {
-                    'patient_id': patient_id,
-                    '$or': [
-                        {'entry_type': {'$exists': False}},  # Old records
-                        {'entry_type': {'$ne': 'other'}}      # New daily records
-                    ]
-                }},
-                {'$group': {'_id': None, 'total': {'$sum': '$amount'}}}
-            ]
-            all_time_result = list(mongo.db.canteen_sales.aggregate(all_time_pipeline))
-            total_spent = all_time_result[0]['total'] if all_time_result else 0
+            # Get all-time total from batch query
+            total_spent = all_time_map.get(patient_id_str, 0)
             
             patients_data.append({
                 'id': str(patient_id),
