@@ -3316,8 +3316,18 @@
           const month = document.getElementById('canteen-month-select').value;
           const year = document.getElementById('canteen-year-select').value;
 
+          console.log(`[CANTEEN] Loading table for ${month}/${year}`);
+
           const res = await fetch(`/api/canteen/monthly-table?month=${month}&year=${year}`);
+
+          if (!res.ok) {
+            const errorText = await res.text();
+            console.error('[CANTEEN] API error response:', errorText);
+            throw new Error(`API returned ${res.status}: ${errorText}`);
+          }
+
           const data = await res.json();
+          console.log('[CANTEEN] Data loaded:', data);
 
           const monthDisplay = document.getElementById('canteen-month-display');
           const tableHeader = document.getElementById('canteen-table-header');
