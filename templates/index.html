@@ -1007,6 +1007,29 @@
         overflow: visible !important;
       }
 
+      /* 2. Dual Scrollbar Wrapper - Top and Bottom Scroll */
+      .dual-scrollbar-wrapper {
+        position: relative;
+      }
+
+      .dual-scrollbar-top {
+        overflow-x: auto;
+        overflow-y: hidden;
+        height: 20px;
+        margin-bottom: 8px;
+      }
+
+      .dual-scrollbar-top-inner {
+        height: 1px;
+      }
+
+      /* Hide scrollbars on print */
+      @media print {
+        .dual-scrollbar-top {
+          display: none !important;
+        }
+      }
+
       /* 2. Zebra Striping (Green Emerald-100 at 20% opacity) */
       /* Target all table body rows, applying color to even rows */
       tbody tr:nth-child(even) {
@@ -1402,6 +1425,62 @@
         if (loginView && isLoading) loginView.classList.add('hidden');
       };
 
+      // Dual Scrollbar Initialization - Adds top scrollbar to all horizontally scrollable tables
+      function initDualScrollbars() {
+        document.querySelectorAll('.overflow-x-auto').forEach((element) => {
+          // Skip if already wrapped or if it's inside print media query
+          if (element.parentElement?.classList.contains('dual-scrollbar-wrapper')) return;
+
+          // Check if this element actually needs scrolling
+          if (element.scrollWidth <= element.clientWidth) return;
+
+          // Create wrapper
+          const wrapper = document.createElement('div');
+          wrapper.className = 'dual-scrollbar-wrapper';
+
+          // Create top scrollbar container
+          const topScroll = document.createElement('div');
+          topScroll.className = 'dual-scrollbar-top';
+
+          // Create inner element to force scrollbar
+          const topScrollInner = document.createElement('div');
+          topScrollInner.className = 'dual-scrollbar-top-inner';
+          topScroll.appendChild(topScrollInner);
+
+          // Insert wrapper before the element
+          element.parentNode.insertBefore(wrapper, element);
+
+          // Move element into wrapper and add top scroll
+          wrapper.appendChild(topScroll);
+          wrapper.appendChild(element);
+
+          // Synchronize scrolling
+          const syncScroll = (source, target) => {
+            target.scrollLeft = source.scrollLeft;
+          };
+
+          topScroll.addEventListener('scroll', () => syncScroll(topScroll, element));
+          element.addEventListener('scroll', () => syncScroll(element, topScroll));
+
+          // Set initial width for top scrollbar
+          const updateTopScrollWidth = () => {
+            topScrollInner.style.width = element.scrollWidth + 'px';
+            // Update visibility - hide if no scrolling needed
+            if (element.scrollWidth <= element.clientWidth) {
+              topScroll.style.display = 'none';
+            } else {
+              topScroll.style.display = 'block';
+            }
+          };
+
+          updateTopScrollWidth();
+
+          // Update on resize or content change
+          const resizeObserver = new ResizeObserver(updateTopScrollWidth);
+          resizeObserver.observe(element);
+        });
+      }
+
       async function initApp() {
         setLoading(true);
         const url = new URL(window.location.href);
@@ -1419,6 +1498,8 @@
           window.navigateTo('login-view');
         }
         setLoading(false);
+        // Initialize dual scrollbars after initial render
+        setTimeout(initDualScrollbars, 100);
       }
 
       async function checkSession() {
@@ -1651,6 +1732,9 @@
         if (viewId === 'psych-sessions-view') {
           initPsychSessionsView();
         }
+
+        // Initialize dual scrollbars after view renders
+        setTimeout(initDualScrollbars, 100);
       };
 
       // --- CALL & MEETING TRACKER ---
@@ -2509,9 +2593,19 @@
             monthNames[admissionDate.getMonth()]
           } ${admissionDate.getDate()} ${admissionDate.getFullYear()}`;
 
-          // FIX: Use actual elapsed days directly.
-          // This will show "100/90" or "365/90" etc.
-          const daysProgress = `${daysElapsed}/90`;
+          // Format days progress as "X months and Y days of Z months"
+          const totalMonths = Math.floor(daysElapsed / 30);
+          const remainingDays = daysElapsed % 30;
+          const targetMonths = 3; // 90 days = 3 months
+
+          let daysProgress;
+          if (totalMonths === 0) {
+            daysProgress = `${remainingDays} days of ${targetMonths} months`;
+          } else if (remainingDays === 0) {
+            daysProgress = `${totalMonths} months of ${targetMonths} months`;
+          } else {
+            daysProgress = `${totalMonths} month${totalMonths > 1 ? 's' : ''} and ${remainingDays} day${remainingDays > 1 ? 's' : ''} of ${targetMonths} months`;
+          }
 
           if (isAdmin) {
             tr.innerHTML = `<td class="px-3 py-2 font-medium text-gray-700 whitespace-nowrap text-xs">${serialNo}</td>
@@ -3404,12 +3498,27 @@
               ? '<span class="ml-2 text-[9px] uppercase font-bold bg-gray-300 text-gray-600 px-1.5 py-0.5 rounded">Discharged</span>'
               : '';
 
+            // Old Balance cell - editable for admin, show indicator if manually overridden
+            const isAdmin = currentUser.role === 'Admin';
+            const oldBalanceEditable = isAdmin ? 'contenteditable="true"' : '';
+            const oldBalanceClass = isAdmin ? 'editable-cell cursor-text hover:bg-blue-50' : '';
+            const overrideIndicator = patient.hasManualOverride
+              ? '<i class="fas fa-edit text-blue-500 text-xs ml-1" title="Manually edited"></i>'
+              : '';
+
             row.innerHTML = `
               <td class="px-4 py-3 whitespace-nowrap sticky left-0 ${nameClass} z-10 border-r">
                 ${patient.name} ${dischargedBadge}
               </td>
-              <td class="px-4 py-3 text-center font-semibold text-gray-700">
-                ${formatCurrency(patient.oldBalance)}
+              <td class="px-4 py-3 text-center font-semibold text-gray-700 ${oldBalanceClass}" 
+                  ${oldBalanceEditable}
+                  data-patient-id="${patient.id}"
+                  data-entry-type="old-balance"
+                  data-original="${patient.oldBalance}"
+                  onblur="saveCanteenOldBalance(this, ${month}, ${year})"
+                  onkeydown="handleCellKeydown(event)"
+                  title="${patient.hasManualOverride ? 'Manual override (calculated: ' + formatCurrency(patient.calculatedBalance) + ')' : 'Auto-calculated'}">
+                ${formatCurrency(patient.oldBalance)}${overrideIndicator}
               </td>
             `;
 
@@ -3476,6 +3585,9 @@
 
             tableBody.appendChild(row);
           });
+
+          // Initialize dual scrollbars for canteen table after rendering
+          setTimeout(initDualScrollbars, 50);
         } catch (e) {
           console.error('Error loading canteen table:', e);
           alert('Failed to load canteen data');
@@ -3501,6 +3613,61 @@
         ];
         if (!allowedKeys.includes(event.key) && (event.key < '0' || event.key > '9')) {
           event.preventDefault();
+        }
+      };
+
+      window.saveCanteenOldBalance = async function saveCanteenOldBalance(cell, month, year) {
+        const patientId = cell.dataset.patientId;
+        const originalValue = cell.dataset.original || '';
+
+        // Get the new value (remove currency formatting)
+        let newValue = cell.textContent.trim().replace(/[^\d]/g, '');
+
+        // If empty, treat as 0
+        if (!newValue) {
+          newValue = '0';
+        }
+
+        // If unchanged, skip save
+        if (newValue === originalValue) {
+          cell.textContent = formatCurrency(parseInt(newValue));
+          return;
+        }
+
+        try {
+          const res = await fetch('/api/canteen/old-balance', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              patient_id: patientId,
+              month: month,
+              year: year,
+              old_balance: parseInt(newValue),
+            }),
+          });
+
+          if (res.ok) {
+            // Update the cell with formatted value
+            cell.textContent = formatCurrency(parseInt(newValue));
+            cell.dataset.original = newValue;
+
+            // Add indicator icon if not already present
+            if (!cell.querySelector('.fa-edit')) {
+              cell.innerHTML +=
+                '<i class="fas fa-edit text-blue-500 text-xs ml-1" title="Manually edited"></i>';
+            }
+
+            // Reload the table to recalculate exceeds balance logic
+            await loadCanteenMonthlyTable();
+          } else {
+            const error = await res.text();
+            alert('Failed to save old balance: ' + error);
+            cell.textContent = formatCurrency(parseInt(originalValue));
+          }
+        } catch (e) {
+          console.error('Save old balance error:', e);
+          alert('Error saving old balance');
+          cell.textContent = formatCurrency(parseInt(originalValue));
         }
       };
 

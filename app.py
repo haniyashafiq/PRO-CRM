@@ -960,6 +960,15 @@ def get_canteen_monthly_table():
             'admissionDate': 1
         }).sort('name', 1))
         
+        # Get manual old balance overrides for this month/year
+        balance_overrides = {}
+        overrides_cursor = mongo.db.canteen_balance_overrides.find({
+            'month': month,
+            'year': year
+        })
+        for override in overrides_cursor:
+            balance_overrides[str(override['patient_id'])] = override['old_balance']
+        
         if not patients_list:
             return jsonify({'month': month, 'year': year, 'daysInMonth': days_in_month, 'patients': []})
         
@@ -1056,7 +1065,11 @@ def get_canteen_monthly_table():
             
             # Old Balance = (previous months' allowances + previous adjustments - previous sales) + current month allowance
             previous_allowances_total = monthly_allowance * months_count
-            old_balance = previous_allowances_total + previous_adjustments - previous_sales_total + monthly_allowance
+            calculated_balance = previous_allowances_total + previous_adjustments - previous_sales_total + monthly_allowance
+            
+            # Check if there's a manual override for this patient's old balance
+            old_balance = balance_overrides.get(patient_id_str, calculated_balance)
+            has_override = patient_id_str in balance_overrides
             
             # Build daily entries from batch query results
             daily_entries = {}
@@ -1082,6 +1095,8 @@ def get_canteen_monthly_table():
                 'id': str(patient_id),
                 'name': patient_name,
                 'oldBalance': old_balance,
+                'calculatedBalance': calculated_balance,
+                'hasManualOverride': has_override,
                 'dailyEntries': daily_entries,
                 'other': other_amount,
                 'monthTotal': month_total,
@@ -1098,6 +1113,51 @@ def get_canteen_monthly_table():
         })
     except Exception as e:
         print(f"Monthly Table Error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/canteen/old-balance', methods=['POST'])
+@role_required(['Admin'])
+def save_canteen_old_balance():
+    """
+    Save manual override for canteen old balance.
+    
+    IMPORTANT: This only affects the "Old Balance" display column in the monthly 
+    canteen tracking table. It does NOT affect actual patient billing or financial 
+    calculations. 
+    
+    The Old Balance is a budgeting/tracking feature that shows the allowance 
+    available at the start of the month. Actual billing uses the sum of 
+    canteen_sales entries, not this old balance field.
+    """
+    if not check_db(): return jsonify({"error": "Database error"}), 500
+    
+    data = clean_input_data(request.json)
+    try:
+        patient_id = data.get('patient_id')
+        month = int(data.get('month'))
+        year = int(data.get('year'))
+        old_balance = int(data.get('old_balance', 0))
+        
+        # Upsert the override
+        mongo.db.canteen_balance_overrides.update_one(
+            {
+                'patient_id': ObjectId(patient_id),
+                'month': month,
+                'year': year
+            },
+            {
+                '$set': {
+                    'old_balance': old_balance,
+                    'updated_at': datetime.now(),
+                    'updated_by': session.get('username')
+                }
+            },
+            upsert=True
+        )
+        
+        return jsonify({"message": "Old balance updated"})
+    except Exception as e:
+        print(f"Save Old Balance Error: {e}")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/api/canteen/daily-entry', methods=['POST'])
