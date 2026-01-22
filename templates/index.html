@@ -2436,7 +2436,25 @@
           };
 
           const isAdmin = currentUser.role === 'Admin';
-          const feeValue = parseInt(String(p.monthlyFee || '0').replace(/,/g, ''), 10) || 0;
+
+          // Calculate days elapsed
+          const admissionDate = p.admissionDate ? new Date(p.admissionDate) : new Date();
+          const today = new Date();
+          const daysDiff = Math.floor((today - admissionDate) / (1000 * 60 * 60 * 24));
+          const daysElapsed = daysDiff >= 0 ? daysDiff : 0;
+
+          // Calculate prorated fee based on days elapsed
+          const monthlyFeeRaw = parseInt(String(p.monthlyFee || '0').replace(/,/g, ''), 10) || 0;
+          let feeValue;
+          if (daysElapsed > 90) {
+            // Per-day rate multiplied by actual days elapsed
+            const perDayRate = monthlyFeeRaw / 30.0;
+            feeValue = Math.floor(perDayRate * daysElapsed);
+          } else {
+            // Within first 90 days, use flat monthly fee
+            feeValue = monthlyFeeRaw;
+          }
+
           const fee = formatCurrency(feeValue);
           const receivedValue =
             parseInt(String(p.receivedAmount || '0').replace(/,/g, ''), 10) || 0;
@@ -2463,8 +2481,7 @@
               '<span class="text-xs font-bold uppercase border border-gray-300 px-2 py-1 rounded">Discharged</span>';
           }
 
-          // Generate serial number
-          const admissionDate = p.admissionDate ? new Date(p.admissionDate) : new Date();
+          // Generate serial number (use admissionDate already calculated above)
           const monthNames = [
             'Jan',
             'Feb',
@@ -2487,11 +2504,6 @@
           const formattedAdmissionDate = `${
             monthNames[admissionDate.getMonth()]
           } ${admissionDate.getDate()} ${admissionDate.getFullYear()}`;
-
-          // Calculate days
-          const today = new Date();
-          const daysDiff = Math.floor((today - admissionDate) / (1000 * 60 * 60 * 24));
-          const daysElapsed = daysDiff >= 0 ? daysDiff : 0;
 
           // FIX: Use actual elapsed days directly.
           // This will show "100/90" or "365/90" etc.
@@ -3038,8 +3050,8 @@
 
           accountsData.forEach((p) => {
             // 2. PARSE VALUES (The Fix: Force everything to Number)
-            // We use String() first to handle null/undefined safely, then remove commas, then parse.
-            const fee = Number(String(p.monthlyFee).replace(/,/g, '')) || 0;
+            // Use calculatedFee if available (prorated), otherwise use monthlyFee
+            const fee = Number(String(p.calculatedFee || p.monthlyFee).replace(/,/g, '')) || 0;
             const received = Number(String(p.receivedAmount).replace(/,/g, '')) || 0;
             const canteen = Number(String(p.canteenTotal).replace(/,/g, '')) || 0;
             const laundry = Number(String(p.laundryAmount).replace(/,/g, '')) || 0;
@@ -3152,7 +3164,8 @@
         document.getElementById('ds-cnic').innerText = p.cnic || '-';
 
         // 5. Calculate Charges
-        const fee = parse(p.monthlyFee);
+        // Use calculatedFee if available (prorated), otherwise use monthlyFee
+        const fee = parse(p.calculatedFee || p.monthlyFee);
         const laundry = parse(p.laundryAmount);
         const canteen = parse(p.canteenTotal);
         const gross = fee + laundry + canteen;

@@ -146,6 +146,29 @@ def role_required(roles):
         return wrapper
     return decorator
 
+def calculate_prorated_fee(monthly_fee, days_elapsed):
+    """
+    Calculate prorated fee based on days elapsed.
+    If days > 90, calculate as (monthly_fee / 30) * days_elapsed.
+    Otherwise, return the flat monthly_fee.
+    """
+    try:
+        # Parse monthly_fee to handle string values with commas
+        if isinstance(monthly_fee, str):
+            monthly_fee = int(monthly_fee.replace(',', '') or '0')
+        else:
+            monthly_fee = int(monthly_fee or 0)
+        
+        if days_elapsed > 90:
+            # Per-day rate multiplied by actual days elapsed
+            per_day_rate = monthly_fee / 30.0
+            return int(per_day_rate * days_elapsed)
+        else:
+            # Within first 90 days, use flat monthly fee
+            return monthly_fee
+    except (ValueError, TypeError):
+        return 0
+
 @app.route('/')
 def index():
     # Frontend handles redirection to login if session is missing.
@@ -1334,6 +1357,8 @@ def export_patients():
 def get_accounts_summary():
     if not check_db(): return jsonify({"error": "Database error"}), 500
     try:
+        from datetime import datetime
+        
         # Get all patients - Added 'isDischarged' to projection
         patients = list(mongo.db.patients.find({}, {
             'name': 1, 'fatherName': 1, 'admissionDate': 1, 
@@ -1352,6 +1377,25 @@ def get_accounts_summary():
         summary = []
         for p in patients:
             pid = str(p['_id'])
+            
+            # Calculate days elapsed from admission date
+            admission_date = p.get('admissionDate')
+            days_elapsed = 0
+            if admission_date:
+                try:
+                    if isinstance(admission_date, str):
+                        admission_dt = datetime.fromisoformat(admission_date.replace('Z', '+00:00'))
+                    else:
+                        admission_dt = admission_date
+                    days_diff = (datetime.now() - admission_dt).days
+                    days_elapsed = max(0, days_diff)
+                except:
+                    days_elapsed = 0
+            
+            # Get monthly fee and calculate prorated fee
+            monthly_fee = p.get('monthlyFee', '0')
+            calculated_fee = calculate_prorated_fee(monthly_fee, days_elapsed)
+            
             summary.append({
                 'id': pid,
                 'name': p.get('name', ''),
@@ -1359,7 +1403,9 @@ def get_accounts_summary():
                 'age': p.get('age', ''),
                 'area': p.get('address', ''), 
                 'admissionDate': p.get('admissionDate', ''),
-                'monthlyFee': p.get('monthlyFee', '0'),
+                'monthlyFee': monthly_fee,
+                'calculatedFee': calculated_fee,  # NEW: Prorated fee
+                'daysElapsed': days_elapsed,  # NEW: Days elapsed for reference
                 'canteenTotal': sales_map.get(pid, 0),
                 'laundryStatus': p.get('laundryStatus', False),
                 'laundryAmount': p.get('laundryAmount', 0),
@@ -1848,6 +1894,20 @@ def generate_discharge_bill(id):
         if not patient:
             return jsonify({"error": "Patient not found"}), 404
         
+        # Calculate days elapsed from admission date
+        admission_date = patient.get('admissionDate')
+        days_elapsed = 0
+        if admission_date:
+            try:
+                if isinstance(admission_date, str):
+                    admission_dt = datetime.fromisoformat(admission_date.replace('Z', '+00:00'))
+                else:
+                    admission_dt = admission_date
+                days_diff = (datetime.now() - admission_dt).days
+                days_elapsed = max(0, days_diff)
+            except:
+                days_elapsed = 0
+        
         # Calculate canteen sales total for this patient
         pipeline = [
             {'$match': {'patient_id': ObjectId(id)}},
@@ -1856,8 +1916,9 @@ def generate_discharge_bill(id):
         canteen_result = list(mongo.db.canteen_sales.aggregate(pipeline))
         canteen_total = canteen_result[0]['total_sales'] if canteen_result else 0
         
-        # Parse financial data
-        monthly_fee = int(str(patient.get('monthlyFee', '0')).replace(',', '') or '0')
+        # Parse financial data and calculate prorated fee
+        monthly_fee_raw = patient.get('monthlyFee', '0')
+        monthly_fee = calculate_prorated_fee(monthly_fee_raw, days_elapsed)
         laundry_amount = patient.get('laundryAmount', 0) if patient.get('laundryStatus', False) else 0
         received_amount = int(str(patient.get('receivedAmount', '0')).replace(',', '') or '0')
         
@@ -1872,6 +1933,7 @@ def generate_discharge_bill(id):
             'CNIC': patient.get('cnic', ''),
             'Admission Date': patient.get('admissionDate', ''),
             'Discharge Date': patient.get('dischargeDate', '') or datetime.now().strftime('%Y-%m-%d'),
+            'Days Stayed': days_elapsed,
             'Monthly Fee': monthly_fee,
             'Canteen Charges': canteen_total,
             'Laundry Charges': laundry_amount,
