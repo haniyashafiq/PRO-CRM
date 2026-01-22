@@ -151,6 +151,11 @@ def calculate_prorated_fee(monthly_fee, days_elapsed):
     Calculate prorated fee based on days elapsed.
     If days > 90, calculate as (monthly_fee / 30) * days_elapsed.
     Otherwise, return the flat monthly_fee.
+    
+    This ensures:
+    - First 90 days: Patient pays fixed monthly fee regardless of exact days
+    - After 90 days: Fee is prorated based on actual days stayed
+    - This prevents overcharging for long-term patients
     """
     try:
         # Parse monthly_fee to handle string values with commas
@@ -168,6 +173,46 @@ def calculate_prorated_fee(monthly_fee, days_elapsed):
             return monthly_fee
     except (ValueError, TypeError):
         return 0
+
+
+# ============================================================
+# FINANCIAL SYSTEM LOGIC OVERVIEW:
+# ============================================================
+# 
+# The system tracks patient finances through multiple components:
+#
+# 1. PATIENT CHARGES (Calculated):
+#    - Monthly Fee: Stored per patient, prorated after 90 days
+#    - Canteen Sales: Aggregated from canteen_sales collection
+#    - Laundry: One-time charge added at discharge (if laundryStatus=True)
+#    
+# 2. PAYMENTS (Tracked):
+#    - receivedAmount: Cumulative payments stored in patient record
+#    - Payment History: Individual payments logged in expenses collection
+#      (type='incoming', category='Patient Fee', auto=True)
+#
+# 3. BALANCE CALCULATION:
+#    Balance Due = (Fee + Canteen + Laundry) - Received Amount
+#
+# 4. DASHBOARD METRICS:
+#    - Total Expected Balance: Sum of all positive balances from active patients
+#    - This shows total money owed to the facility
+#
+# 5. EXPENSES TRACKING:
+#    - Manual Income: Recorded in expenses (type='incoming')  
+#    - Manual Outgoing: Recorded in expenses (type='outgoing')
+#    - Patient payments are auto-recorded but NOT double-counted in summaries
+#
+# 6. OVERHEADS TRACKING:
+#    - Monthly daily expense tracking (kitchen, canteen, others, advances, income)
+#    - Canteen column auto-syncs with canteen_sales collection
+#    - Shows daily profit/loss calculations
+#
+# 7. DATA CONSISTENCY:
+#    - Canteen totals: Aggregated from canteen_sales using patient_id
+#    - Payments: receivedAmount must match sum of payment history
+#    - All financial fields stored as strings with commas, parsed as integers
+# ============================================================
 
 @app.route('/')
 def index():
@@ -391,17 +436,47 @@ def get_dashboard_metrics():
         # Fetch Active Patients
         active_patients = list(mongo.db.patients.find({'isDischarged': {'$ne': True}}))
         
-        total_income_this_month = 0
+        total_expected_balance = 0
         
-        # Calculate total expected income from active patients' monthly fees
+        # Calculate total expected balance from active patients (fee + canteen + laundry - received)
         for patient in active_patients:
             try:
+                pid = str(patient['_id'])
+                
+                # Calculate days elapsed for prorated fee
+                admission_date = patient.get('admissionDate')
+                days_elapsed = 0
+                if admission_date:
+                    try:
+                        if isinstance(admission_date, str):
+                            admission_dt = datetime.fromisoformat(admission_date.replace('Z', '+00:00'))
+                        else:
+                            admission_dt = admission_date
+                        days_diff = (datetime.now() - admission_dt).days
+                        days_elapsed = max(0, days_diff)
+                    except:
+                        pass
+                
+                # Get prorated fee
                 fee_str = patient.get('monthlyFee', '0') or '0'
-                # Handle string with commas (e.g., "10,000")
-                fee = int(str(fee_str).replace(',', '').strip() or '0')
-                total_income_this_month += fee
-            except (ValueError, TypeError):
-                pass  # Skip patients with invalid fee values
+                fee = calculate_prorated_fee(fee_str, days_elapsed)
+                
+                # Get canteen total
+                canteen = canteen_map.get(pid, 0)
+                
+                # Get laundry (one-time charge for discharge)
+                laundry = patient.get('laundryAmount', 0) if patient.get('laundryStatus', False) else 0
+                
+                # Get received amount
+                received_str = str(patient.get('receivedAmount', '0')).replace(',', '')
+                received = int(received_str or '0')
+                
+                # Calculate remaining balance
+                balance = fee + canteen + laundry - received
+                total_expected_balance += max(0, balance)  # Only count positive balances
+            except (ValueError, TypeError) as e:
+                print(f"Dashboard calculation error for patient {patient.get('name')}: {e}")
+                pass
 
         # 3. Canteen Sales This Month (KPI Card)
         pipeline_month = [
@@ -415,7 +490,7 @@ def get_dashboard_metrics():
             'totalPatients': total_patients,
             'admissionsThisMonth': admissions_this_month,
             'dischargesThisMonth': discharges_this_month,
-            'totalIncomeThisMonth': total_income_this_month,
+            'totalExpectedBalance': total_expected_balance,  # Changed: now shows remaining balance
             'totalCanteenSalesThisMonth': total_canteen_sales_this_month
         })
     except Exception as e:
@@ -547,10 +622,10 @@ def add_patient():
         data['isDischarged'] = data.get('isDischarged', False)
         data['dischargeDate'] = data.get('dischargeDate')
         
-        # Laundry fields
+        # Laundry fields (one-time charge added to final discharge bill)
         data['laundryStatus'] = data.get('laundryStatus', False)  # Boolean: whether laundry service is enabled
         if data['laundryStatus']:
-            data['laundryAmount'] = int(data.get('laundryAmount', 3500))  # Default 3500 if enabled
+            data['laundryAmount'] = int(data.get('laundryAmount', 3500))  # Default 3500 if enabled (one-time charge)
         else:
             data['laundryAmount'] = 0  # 0 if not enabled
         
@@ -1229,31 +1304,14 @@ def expenses_summary():
             elif item['_id'] == 'outgoing':
                 outgoing = item['total']
 
-        # Add automated incoming: monthly fees + canteen sales (month)
-        # Monthly fees
-        patients = mongo.db.patients.find()
-        auto_fees = 0
-        for p in patients:
-            try:
-                auto_fees += int(str(p.get('monthlyFee', '0')).replace(',', ''))
-            except ValueError:
-                pass
-        # Canteen sales this month
-        pipeline_sales = [
-            {'$match': {'date': {'$gte': start_of_month}}},
-            {'$group': {'_id': None, 'total_sales': {'$sum': '$amount'}}}
-        ]
-        sales_result = list(mongo.db.canteen_sales.aggregate(pipeline_sales))
-        auto_canteen = sales_result[0]['total_sales'] if sales_result else 0
-
-        incoming += auto_fees + auto_canteen
-
+        # Note: We only count manual expenses here.
+        # Patient fees and canteen are tracked separately in accounts.
+        # This avoids double-counting since receivedAmount already captures actual payments.
+        
         return jsonify({
-            'incoming': incoming,
-            'outgoing': outgoing,
-            'net': incoming - outgoing,
-            'autoFees': auto_fees,
-            'autoCanteen': auto_canteen
+            'incoming': incoming,  # Only manual recorded income
+            'outgoing': outgoing,  # Only manual recorded expenses
+            'net': incoming - outgoing
         })
     except Exception as e:
         print(f"Expenses summary error: {e}")
@@ -1728,6 +1786,186 @@ def get_payment_records():
         return jsonify(records)
     except Exception as e:
         print(f"Payment Records Error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# ============================================================
+#  OVERHEADS MANAGEMENT (Admin Only)
+# ============================================================
+
+@app.route('/api/overheads/<int:month>/<int:year>', methods=['GET'])
+@role_required(['Admin'])
+def get_overheads(month, year):
+    """
+    Fetch overhead entries for a given month/year.
+    Also aggregates daily canteen totals from canteen_sales.
+    """
+    if not check_db(): return jsonify({"error": "Database error"}), 500
+    try:
+        # Fetch stored overhead entries for this month
+        overheads = list(mongo.db.overheads.find({
+            'month': month,
+            'year': year
+        }))
+        
+        # Convert to dict keyed by date
+        overhead_map = {}
+        for entry in overheads:
+            date_key = entry.get('date')
+            if date_key:
+                overhead_map[date_key] = {
+                    '_id': str(entry['_id']),
+                    'date': date_key,
+                    'kitchen': entry.get('kitchen', 0),
+                    'canteen_auto': entry.get('canteen_auto', 0),
+                    'others': entry.get('others', 0),
+                    'pay_advance': entry.get('pay_advance', 0),
+                    'employee_names': entry.get('employee_names', ''),
+                    'income': entry.get('income', 0),
+                    'total_expense': entry.get('total_expense', 0)
+                }
+        
+        # Aggregate daily canteen sales totals
+        start_date = datetime(year, month, 1)
+        if month == 12:
+            end_date = datetime(year + 1, 1, 1)
+        else:
+            end_date = datetime(year, month + 1, 1)
+        
+        canteen_aggregation = mongo.db.canteen_sales.aggregate([
+            {
+                '$match': {
+                    'date': {
+                        '$gte': start_date,
+                        '$lt': end_date
+                    }
+                }
+            },
+            {
+                '$group': {
+                    '_id': {
+                        '$dateToString': {
+                            'format': '%Y-%m-%d',
+                            'date': '$date'
+                        }
+                    },
+                    'total': {'$sum': '$amount'}
+                }
+            }
+        ])
+        
+        canteen_daily = {item['_id']: item['total'] for item in canteen_aggregation}
+        
+        # Calculate days in month
+        if month == 12:
+            next_month = datetime(year + 1, 1, 1)
+        else:
+            next_month = datetime(year, month + 1, 1)
+        days_in_month = (next_month - datetime(year, month, 1)).days
+        
+        return jsonify({
+            'overheads': overhead_map,
+            'canteen_daily': canteen_daily,
+            'days_in_month': days_in_month
+        })
+    except Exception as e:
+        print(f"Get Overheads Error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/overheads/entry', methods=['POST'])
+@role_required(['Admin'])
+def save_overhead_entry():
+    """
+    Save or update a single overhead entry for a specific date.
+    """
+    if not check_db(): return jsonify({"error": "Database error"}), 500
+    try:
+        data = request.get_json()
+        date = data.get('date')  # Format: YYYY-MM-DD
+        month = data.get('month')
+        year = data.get('year')
+        
+        # Parse values
+        kitchen = float(data.get('kitchen', 0))
+        others = float(data.get('others', 0))
+        pay_advance = float(data.get('pay_advance', 0))
+        income = float(data.get('income', 0))
+        employee_names = data.get('employee_names', '')
+        canteen_auto = float(data.get('canteen_auto', 0))
+        
+        # Calculate total expense
+        total_expense = kitchen + canteen_auto + others + pay_advance
+        
+        entry = {
+            'date': date,
+            'month': month,
+            'year': year,
+            'kitchen': kitchen,
+            'canteen_auto': canteen_auto,
+            'others': others,
+            'pay_advance': pay_advance,
+            'employee_names': employee_names,
+            'income': income,
+            'total_expense': total_expense,
+            'last_updated': datetime.now()
+        }
+        
+        # Upsert: update if exists, insert if not
+        mongo.db.overheads.update_one(
+            {'date': date, 'month': month, 'year': year},
+            {'$set': entry},
+            upsert=True
+        )
+        
+        return jsonify({"message": "Entry saved", "entry": entry})
+    except Exception as e:
+        print(f"Save Overhead Entry Error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/overheads/canteen-sync/<int:month>/<int:year>', methods=['GET'])
+@role_required(['Admin'])
+def sync_overheads_canteen(month, year):
+    """
+    Get updated daily canteen totals for the month.
+    Used for real-time sync when canteen sales are added.
+    """
+    if not check_db(): return jsonify({"error": "Database error"}), 500
+    try:
+        start_date = datetime(year, month, 1)
+        if month == 12:
+            end_date = datetime(year + 1, 1, 1)
+        else:
+            end_date = datetime(year, month + 1, 1)
+        
+        canteen_aggregation = mongo.db.canteen_sales.aggregate([
+            {
+                '$match': {
+                    'date': {
+                        '$gte': start_date,
+                        '$lt': end_date
+                    }
+                }
+            },
+            {
+                '$group': {
+                    '_id': {
+                        '$dateToString': {
+                            'format': '%Y-%m-%d',
+                            'date': '$date'
+                        }
+                    },
+                    'total': {'$sum': '$amount'}
+                }
+            }
+        ])
+        
+        canteen_daily = {item['_id']: item['total'] for item in canteen_aggregation}
+        
+        return jsonify({'canteen_daily': canteen_daily})
+    except Exception as e:
+        print(f"Sync Overheads Canteen Error: {e}")
         return jsonify({"error": str(e)}), 500
 
 

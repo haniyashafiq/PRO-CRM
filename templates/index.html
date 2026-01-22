@@ -1443,12 +1443,14 @@
 
       function updateNavVisibility() {
         const navMap = {
+          'nav-dash': ['Admin', 'General Staff', 'Doctor', 'Psychologist', 'Canteen'],
           'nav-patients': ['Admin'],
           'nav-canteen': ['Admin', 'Canteen'],
           'nav-expenses': ['Admin'],
           'nav-users': ['Admin'],
           'nav-accounts': ['Admin'],
-          'nav-overheads': ['Admin'],
+          'nav-overheads-finance': ['Admin'],
+          'nav-monthly-overheads': ['Admin'],
           'nav-attendance': ['Admin'],
           'nav-reports': ['Admin', 'General Staff', 'Doctor'],
           'nav-psych-sessions': ['Admin', 'Psychologist'],
@@ -1599,7 +1601,8 @@
           'canteen-view': 'nav-canteen',
           'user-management-view': 'nav-users',
           'accounts-view': 'nav-accounts',
-          'overheads-view': 'nav-overheads',
+          'overheads-view': 'nav-overheads-finance',
+          'monthly-overheads-view': 'nav-monthly-overheads',
           'attendance-view': 'nav-attendance',
           'daily-report-view': 'nav-reports',
           'psych-sessions-view': 'nav-psych-sessions',
@@ -1636,6 +1639,7 @@
         if (viewId === 'utility-bills-view') renderUtilityBills();
         if (viewId === 'team-view') renderTeam();
         if (viewId === 'overheads-view') renderOverheads();
+        if (viewId === 'monthly-overheads-view') renderMonthlyOverheads();
         if (viewId === 'attendance-view') renderAttendanceView();
         if (viewId === 'daily-report-view') {
           const datePicker = document.getElementById('report-date-picker');
@@ -3552,6 +3556,11 @@
 
             // Reload the table to update totals
             await loadCanteenMonthlyTable();
+
+            // Sync overheads canteen column if overheads view is visible
+            if (typeof refreshOverheadsCanteenColumn === 'function') {
+              await refreshOverheadsCanteenColumn();
+            }
           } else {
             const error = await res.json();
             alert(error.error || 'Failed to save entry');
@@ -3570,6 +3579,422 @@
         // Legacy function - kept for compatibility but not used in new system
         e.preventDefault();
         alert('Please use the monthly table to record canteen entries.');
+      };
+
+      // ============================================================
+      // --- MONTHLY OVERHEADS MANAGEMENT (ADMIN ONLY) ---
+      // ============================================================
+
+      let monthlyOverheadsData = {};
+      let monthlyCanteenDailyData = {};
+      let monthlyEmployeesCache = [];
+
+      async function initializeMonthlyOverheads() {
+        // Initialize month/year selectors
+        const monthSelect = document.getElementById('monthly-overheads-month-select');
+        const yearSelect = document.getElementById('monthly-overheads-year-select');
+
+        const now = new Date();
+        const currentMonth = now.getMonth() + 1;
+        const currentYear = now.getFullYear();
+
+        // Set current month
+        monthSelect.value = currentMonth;
+
+        // Populate years (current year and 2 years back)
+        yearSelect.innerHTML = '';
+        for (let y = currentYear; y >= currentYear - 2; y--) {
+          const option = document.createElement('option');
+          option.value = y;
+          option.textContent = y;
+          yearSelect.appendChild(option);
+        }
+        yearSelect.value = currentYear;
+
+        // Fetch employees for dropdown
+        try {
+          const res = await fetch('/api/employees');
+          if (res.ok) {
+            monthlyEmployeesCache = await res.json();
+          }
+        } catch (e) {
+          console.error('Failed to fetch employees:', e);
+        }
+
+        // Load current month data
+        await loadMonthlyOverheadsTable();
+      }
+
+      window.loadMonthlyOverheadsTable = async function () {
+        try {
+          const month = parseInt(document.getElementById('monthly-overheads-month-select').value);
+          const year = parseInt(document.getElementById('monthly-overheads-year-select').value);
+
+          console.log(`[MONTHLY OVERHEADS] Loading table for ${month}/${year}`);
+
+          const res = await fetch(`/api/overheads/${month}/${year}`);
+          if (!res.ok) {
+            throw new Error(`API returned ${res.status}`);
+          }
+
+          const data = await res.json();
+          console.log('[MONTHLY OVERHEADS] Data loaded:', data);
+
+          monthlyOverheadsData = data.overheads || {};
+          monthlyCanteenDailyData = data.canteen_daily || {};
+          const daysInMonth = data.days_in_month;
+
+          renderMonthlyOverheadsTable(month, year, daysInMonth);
+        } catch (e) {
+          console.error('[MONTHLY OVERHEADS] Error loading data:', e);
+          alert('Failed to load monthly overheads data. Please try again.');
+        }
+      };
+
+      function renderMonthlyOverheadsTable(month, year, daysInMonth) {
+        const container = document.getElementById('monthly-overheads-table-container');
+
+        const monthNames = [
+          'January',
+          'February',
+          'March',
+          'April',
+          'May',
+          'June',
+          'July',
+          'August',
+          'September',
+          'October',
+          'November',
+          'December',
+        ];
+        const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+        let tableHTML = `
+          <table class="w-full table-auto border-collapse text-sm">
+            <thead class="bg-emerald-600 text-white sticky top-0">
+              <tr>
+                <th class="px-3 py-3 text-center text-xs font-bold uppercase border border-emerald-700">Date</th>
+                <th class="px-3 py-3 text-center text-xs font-bold uppercase border border-emerald-700">Day</th>
+                <th class="px-3 py-3 text-center text-xs font-bold uppercase border border-emerald-700">Kitchen</th>
+                <th class="px-3 py-3 text-center text-xs font-bold uppercase border border-emerald-700">Canteen</th>
+                <th class="px-3 py-3 text-center text-xs font-bold uppercase border border-emerald-700">Others</th>
+                <th class="px-3 py-3 text-center text-xs font-bold uppercase border border-emerald-700">Pay/Advance</th>
+                <th class="px-3 py-3 text-center text-xs font-bold uppercase border border-emerald-700">Employee</th>
+                <th class="px-3 py-3 text-center text-xs font-bold uppercase border border-emerald-700 bg-emerald-700">Total Expense</th>
+                <th class="px-3 py-3 text-center text-xs font-bold uppercase border border-emerald-700">Income</th>
+              </tr>
+            </thead>
+            <tbody class="bg-white">
+        `;
+
+        // Totals tracking
+        let totalKitchen = 0;
+        let totalCanteen = 0;
+        let totalOthers = 0;
+        let totalPayAdvance = 0;
+        let totalExpense = 0;
+        let totalIncome = 0;
+
+        // Generate rows for each day
+        for (let day = 1; day <= daysInMonth; day++) {
+          const dateObj = new Date(year, month - 1, day);
+          const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+          const dayName = dayNames[dateObj.getDay()];
+
+          const entry = monthlyOverheadsData[dateStr] || {};
+          const kitchen = entry.kitchen || 0;
+          const canteenAuto = monthlyCanteenDailyData[dateStr] || 0;
+          const others = entry.others || 0;
+          const payAdvance = entry.pay_advance || 0;
+          const income = entry.income || 0;
+          const employeeNames = entry.employee_names || '';
+
+          const rowExpense = kitchen + canteenAuto + others + payAdvance;
+
+          totalKitchen += kitchen;
+          totalCanteen += canteenAuto;
+          totalOthers += others;
+          totalPayAdvance += payAdvance;
+          totalExpense += rowExpense;
+          totalIncome += income;
+
+          tableHTML += `
+            <tr class="hover:bg-emerald-50 border-b">
+              <td class="px-3 py-2 text-center border border-gray-200 font-semibold">${day}</td>
+              <td class="px-3 py-2 text-center border border-gray-200 text-gray-600">${dayName}</td>
+              <td class="px-3 py-2 text-right border border-gray-200 cursor-pointer hover:bg-yellow-50" 
+                  contenteditable="true"
+                  data-field="kitchen"
+                  data-date="${dateStr}"
+                  onblur="saveMonthlyOverheadCell(this)"
+                  onfocus="selectAllText(this)">${kitchen || ''}</td>
+              <td class="px-3 py-2 text-right border border-gray-200 bg-gray-100 text-gray-700 font-semibold">${canteenAuto ? formatCurrency(canteenAuto) : ''}</td>
+              <td class="px-3 py-2 text-right border border-gray-200 cursor-pointer hover:bg-yellow-50" 
+                  contenteditable="true"
+                  data-field="others"
+                  data-date="${dateStr}"
+                  onblur="saveMonthlyOverheadCell(this)"
+                  onfocus="selectAllText(this)">${others || ''}</td>
+              <td class="px-3 py-2 text-right border border-gray-200 cursor-pointer hover:bg-yellow-50" 
+                  contenteditable="true"
+                  data-field="pay_advance"
+                  data-date="${dateStr}"
+                  onblur="saveMonthlyOverheadCell(this)"
+                  onfocus="selectAllText(this)">${payAdvance || ''}</td>
+              <td class="px-3 py-2 border border-gray-200 cursor-pointer hover:bg-yellow-50 relative" 
+                  data-field="employee_names"
+                  data-date="${dateStr}"
+                  onclick="openMonthlyEmployeeDropdown(this)">${employeeNames}</td>
+              <td class="px-3 py-2 text-right border border-gray-200 bg-emerald-100 font-bold text-emerald-900">${rowExpense ? formatCurrency(rowExpense) : ''}</td>
+              <td class="px-3 py-2 text-right border border-gray-200 cursor-pointer hover:bg-yellow-50" 
+                  contenteditable="true"
+                  data-field="income"
+                  data-date="${dateStr}"
+                  onblur="saveMonthlyOverheadCell(this)"
+                  onfocus="selectAllText(this)">${income || ''}</td>
+            </tr>
+          `;
+        }
+
+        // Totals row
+        const profit = totalIncome - totalExpense;
+        tableHTML += `
+            <tr class="bg-emerald-700 text-white font-bold">
+              <td colspan="2" class="px-3 py-3 text-center border border-emerald-800 uppercase">Total</td>
+              <td class="px-3 py-3 text-right border border-emerald-800">${formatCurrency(totalKitchen)}</td>
+              <td class="px-3 py-3 text-right border border-emerald-800">${formatCurrency(totalCanteen)}</td>
+              <td class="px-3 py-3 text-right border border-emerald-800">${formatCurrency(totalOthers)}</td>
+              <td class="px-3 py-3 text-right border border-emerald-800">${formatCurrency(totalPayAdvance)}</td>
+              <td class="px-3 py-3 border border-emerald-800"></td>
+              <td class="px-3 py-3 text-right border border-emerald-800 bg-emerald-800">${formatCurrency(totalExpense)}</td>
+              <td class="px-3 py-3 text-right border border-emerald-800">${formatCurrency(totalIncome)}</td>
+            </tr>
+          </tbody>
+        </table>
+        `;
+
+        container.innerHTML = tableHTML;
+
+        // Update profit display
+        const profitDisplay = document.getElementById('monthly-overheads-profit-display');
+        const profitClass =
+          profit >= 0
+            ? 'text-green-700 bg-green-50 border-green-200'
+            : 'text-white bg-red-500 border-red-600';
+        profitDisplay.innerHTML = `
+          <div class="border-2 ${profitClass} px-6 py-3 rounded-xl shadow-lg">
+            <div class="text-xs font-bold uppercase tracking-wide mb-1">${monthNames[month - 1]} Profit</div>
+            <div class="text-3xl font-extrabold">${formatCurrency(profit)}</div>
+          </div>
+        `;
+      }
+
+      window.selectAllText = function (element) {
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+      };
+
+      window.saveMonthlyOverheadCell = async function (cell) {
+        const date = cell.dataset.date;
+        const field = cell.dataset.field;
+        const value = parseFloat(cell.textContent.trim()) || 0;
+
+        const [year, month, day] = date.split('-').map(Number);
+
+        // Get current row values
+        const row = cell.parentElement;
+        const cells = Array.from(row.querySelectorAll('td'));
+
+        const kitchen = parseFloat(cells[2].textContent.trim()) || 0;
+        const others = parseFloat(cells[4].textContent.trim()) || 0;
+        const payAdvance = parseFloat(cells[5].textContent.trim()) || 0;
+        const employeeNames = cells[6].textContent.trim();
+        const income = parseFloat(cells[8].textContent.trim()) || 0;
+        const canteenAuto = monthlyCanteenDailyData[date] || 0;
+
+        try {
+          const res = await fetch('/api/overheads/entry', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              date,
+              month,
+              year,
+              kitchen,
+              canteen_auto: canteenAuto,
+              others,
+              pay_advance: payAdvance,
+              employee_names: employeeNames,
+              income,
+            }),
+          });
+
+          if (res.ok) {
+            // Reload table to update totals and profit
+            await loadMonthlyOverheadsTable();
+          } else {
+            alert('Failed to save entry');
+          }
+        } catch (e) {
+          console.error('Error saving monthly overhead entry:', e);
+          alert('Failed to save entry');
+        }
+      };
+
+      window.openMonthlyEmployeeDropdown = function (cell) {
+        const date = cell.dataset.date;
+        const currentValue = cell.textContent.trim();
+
+        // Remove any existing dropdown
+        const existing = document.querySelector('.employee-dropdown-overlay');
+        if (existing) existing.remove();
+
+        // Create overlay
+        const overlay = document.createElement('div');
+        overlay.className =
+          'employee-dropdown-overlay fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50';
+
+        const dropdown = document.createElement('div');
+        dropdown.className = 'bg-white rounded-lg shadow-xl p-4 w-96 max-h-96 overflow-y-auto';
+        dropdown.innerHTML = `
+          <h3 class="font-bold text-gray-800 mb-3 text-lg">Select Employee(s)</h3>
+          <input type="text" 
+                 id="monthly-employee-search" 
+                 placeholder="Search employees..." 
+                 class="w-full border rounded px-3 py-2 mb-3 focus:ring-2 focus:ring-green-500" />
+          <div id="monthly-employee-list" class="space-y-1"></div>
+          <div class="mt-4 flex gap-2">
+            <button onclick="saveMonthlyEmployeeSelection('${date}')" class="flex-1 bg-emerald-600 text-white px-4 py-2 rounded hover:bg-emerald-700">Save</button>
+            <button onclick="closeMonthlyEmployeeDropdown()" class="flex-1 bg-gray-300 text-gray-700 px-4 py-2 rounded hover:bg-gray-400">Cancel</button>
+          </div>
+        `;
+
+        overlay.appendChild(dropdown);
+        document.body.appendChild(overlay);
+
+        // Populate employee list
+        renderMonthlyEmployeeList(currentValue);
+
+        // Add search functionality
+        document.getElementById('monthly-employee-search').addEventListener('input', (e) => {
+          renderMonthlyEmployeeList(currentValue, e.target.value);
+        });
+
+        // Close on overlay click
+        overlay.addEventListener('click', (e) => {
+          if (e.target === overlay) closeMonthlyEmployeeDropdown();
+        });
+      };
+
+      function renderMonthlyEmployeeList(currentValue, searchTerm = '') {
+        const listContainer = document.getElementById('monthly-employee-list');
+        const selectedNames = currentValue
+          .split(',')
+          .map((n) => n.trim())
+          .filter((n) => n);
+
+        const filtered = monthlyEmployeesCache.filter((emp) =>
+          emp.name.toLowerCase().includes(searchTerm.toLowerCase())
+        );
+
+        listContainer.innerHTML = filtered
+          .map((emp) => {
+            const isChecked = selectedNames.includes(emp.name);
+            return `
+            <label class="flex items-center gap-2 p-2 hover:bg-gray-100 rounded cursor-pointer">
+              <input type="checkbox" 
+                     value="${emp.name}" 
+                     ${isChecked ? 'checked' : ''} 
+                     class="monthly-employee-checkbox" />
+              <span>${emp.name} - ${emp.designation}</span>
+            </label>
+          `;
+          })
+          .join('');
+      }
+
+      window.saveMonthlyEmployeeSelection = async function (date) {
+        const checkboxes = document.querySelectorAll('.monthly-employee-checkbox:checked');
+        const selectedNames = Array.from(checkboxes)
+          .map((cb) => cb.value)
+          .join(', ');
+
+        const [year, month, day] = date.split('-').map(Number);
+
+        // Find the cell for this date
+        const cell = document.querySelector(`td[data-field="employee_names"][data-date="${date}"]`);
+        if (cell) {
+          cell.textContent = selectedNames;
+
+          // Get current row values
+          const row = cell.parentElement;
+          const cells = Array.from(row.querySelectorAll('td'));
+
+          const kitchen = parseFloat(cells[2].textContent.trim()) || 0;
+          const others = parseFloat(cells[4].textContent.trim()) || 0;
+          const payAdvance = parseFloat(cells[5].textContent.trim()) || 0;
+          const income = parseFloat(cells[8].textContent.trim()) || 0;
+          const canteenAuto = monthlyCanteenDailyData[date] || 0;
+
+          try {
+            const res = await fetch('/api/overheads/entry', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                date,
+                month,
+                year,
+                kitchen,
+                canteen_auto: canteenAuto,
+                others,
+                pay_advance: payAdvance,
+                employee_names: selectedNames,
+                income,
+              }),
+            });
+
+            if (res.ok) {
+              closeMonthlyEmployeeDropdown();
+            } else {
+              alert('Failed to save employee selection');
+            }
+          } catch (e) {
+            console.error('Error saving employee selection:', e);
+            alert('Failed to save employee selection');
+          }
+        }
+      };
+
+      window.closeMonthlyEmployeeDropdown = function () {
+        const overlay = document.querySelector('.employee-dropdown-overlay');
+        if (overlay) overlay.remove();
+      };
+
+      window.refreshOverheadsCanteenColumn = async function () {
+        // Called when canteen sales are updated to sync the Canteen column
+        const month = parseInt(document.getElementById('monthly-overheads-month-select').value);
+        const year = parseInt(document.getElementById('monthly-overheads-year-select').value);
+        const currentView = document.getElementById('monthly-overheads-view');
+
+        // Only refresh if overheads view is currently visible
+        if (currentView && !currentView.classList.contains('hidden')) {
+          try {
+            const res = await fetch(`/api/overheads/canteen-sync/${month}/${year}`);
+            if (res.ok) {
+              const data = await res.json();
+              monthlyCanteenDailyData = data.canteen_daily || {};
+
+              // Reload the entire table to update canteen column and recalculate totals
+              await loadMonthlyOverheadsTable();
+            }
+          } catch (e) {
+            console.error('Error syncing canteen data:', e);
+          }
+        }
       };
 
       // --- USER MANAGEMENT ---
@@ -3620,38 +4045,17 @@
       // --- OVERHEADS MANAGEMENT ---
       async function renderOverheads() {
         if (currentUser.role !== 'Admin') return;
-
-        // 1. Reset Internal Totals for Salaries/Bills
         totalSalaries = 0;
         totalBills = 0;
-
-        // 2. Fetch Expenses (Salaries & Bills)
         await Promise.all([renderTeam(true), renderUtilityBills(true)]);
         updateOverheadTotal();
+        loadOldBalances();
+      }
 
-        // 3. Fetch Income (The GREEN card) - WITH CACHE BUSTING
-        try {
-          // The timestamp (?t=...) forces the browser to fetch new data from the server
-          const dashRes = await fetch('/api/dashboard?t=' + Date.now());
-
-          if (dashRes.ok) {
-            const dashData = await dashRes.json();
-
-            // Log exactly what the frontend received
-            console.log('Overheads Income Data Received:', dashData.totalIncomeThisMonth);
-
-            const incomeEl = document.getElementById('overhead-total-income');
-            if (incomeEl) {
-              // Force conversion to Number to ensure safety
-              const val = Number(dashData.totalIncomeThisMonth) || 0;
-              incomeEl.innerText = formatCurrency(val);
-            } else {
-              console.error("Error: Could not find HTML element with id 'overhead-total-income'");
-            }
-          }
-        } catch (e) {
-          console.error('Failed to load income for overheads', e);
-        }
+      // --- MONTHLY OVERHEADS MANAGEMENT ---
+      async function renderMonthlyOverheads() {
+        if (currentUser.role !== 'Admin') return;
+        await initializeMonthlyOverheads();
       }
 
       function updateOverheadTotal() {
@@ -4037,85 +4441,6 @@
 
       // --- OVERHEADS DASHBOARD ---
       window.onload = initApp;
-
-      async function renderOverheads() {
-        if (currentUser.role !== 'Admin') return;
-
-        // 1. Reset Internal Totals for Salaries/Bills (Red Card)
-        totalSalaries = 0;
-        totalBills = 0;
-
-        // 2. Fetch Expenses (Salaries & Bills)
-        await Promise.all([renderTeam(true), renderUtilityBills(true)]);
-        updateOverheadTotal();
-
-        // 3. Fetch Detailed Income Breakdown (Green Card)
-        try {
-          const res = await fetch('/api/accounts/summary');
-          if (!res.ok) throw new Error('Failed to load accounts');
-          const accounts = await res.json();
-
-          // Filter Active Patients Only
-          const activePatients = accounts.filter((p) => !p.isDischarged);
-
-          // Calculate Totals
-          let totalFees = 0;
-          let totalLaundry = 0;
-          let totalCanteen = 0;
-          let totalReceived = 0;
-
-          activePatients.forEach((p) => {
-            totalFees += Number(String(p.monthlyFee).replace(/,/g, '')) || 0;
-            totalLaundry += Number(String(p.laundryAmount).replace(/,/g, '')) || 0;
-            totalCanteen += Number(String(p.canteenTotal).replace(/,/g, '')) || 0;
-            totalReceived += Number(String(p.receivedAmount).replace(/,/g, '')) || 0;
-          });
-
-          // Net Expected = (Fees + Laundry + Canteen) - Received
-          const netExpected = totalFees + totalLaundry + totalCanteen - totalReceived;
-
-          // Update the Big Number
-          const incomeEl = document.getElementById('overhead-total-income');
-          if (incomeEl) {
-            incomeEl.innerText = formatCurrency(netExpected);
-
-            // Replace the subtitle with the breakdown
-            // We target the parent to inject the new layout
-            const parentContainer = incomeEl.parentElement.parentElement;
-
-            // Remove old breakdown if it exists to avoid duplicates
-            const oldBreakdown = document.getElementById('income-breakdown-details');
-            if (oldBreakdown) oldBreakdown.remove();
-
-            // Find the subtitle span (sibling) and hide/remove it
-            const oldSubtitle = incomeEl.nextElementSibling;
-            if (oldSubtitle) oldSubtitle.style.display = 'none';
-
-            // Create new Breakdown HTML
-            const breakdownHtml = `
-              <div id="income-breakdown-details" class="mt-3 text-xs text-emerald-800 font-medium space-y-1 border-t border-emerald-200 pt-2">
-                <div class="flex justify-between"><span>Remaining Fees:</span> <span>${formatNumber(
-                  totalFees - totalReceived
-                )}</span></div>
-                <div class="flex justify-between"><span>Laundry:</span> <span>${formatNumber(
-                  totalLaundry
-                )}</span></div>
-                <div class="flex justify-between"><span>Canteen:</span> <span>${formatNumber(
-                  totalCanteen
-                )}</span></div>
-                <div class="hidden text-emerald-600 text-[10px] text-right mt-1 opacity-70">(Gross: ${formatNumber(
-                  totalFees
-                )} - Recv: ${formatNumber(totalReceived)})</div>
-              </div>
-            `;
-
-            // Append new breakdown
-            incomeEl.parentElement.insertAdjacentHTML('afterend', breakdownHtml);
-          }
-        } catch (e) {
-          console.error('Failed to load income breakdown', e);
-        }
-      }
 
       function updateOverheadTotal() {
         const grandTotal = totalSalaries + totalBills;
@@ -5804,63 +6129,6 @@
           loadOldBalances();
         }
       }
-
-      // UPDATE THIS EXISTING FUNCTION IN YOUR CODE
-      async function renderOverheads() {
-        if (currentUser.role !== 'Admin') return;
-        totalSalaries = 0;
-        totalBills = 0;
-        await Promise.all([renderTeam(true), renderUtilityBills(true)]);
-        updateOverheadTotal();
-
-        // --- NEW LINE ADDED HERE ---
-        loadOldBalances();
-        // ---------------------------
-
-        // ... existing income logic ...
-        try {
-          const res = await fetch('/api/accounts/summary');
-          if (!res.ok) throw new Error('Failed to load accounts');
-          const accounts = await res.json();
-          const activePatients = accounts.filter((p) => !p.isDischarged);
-          let totalFees = 0,
-            totalLaundry = 0,
-            totalCanteen = 0,
-            totalReceived = 0;
-          activePatients.forEach((p) => {
-            totalFees += Number(String(p.monthlyFee).replace(/,/g, '')) || 0;
-            totalLaundry += Number(String(p.laundryAmount).replace(/,/g, '')) || 0;
-            totalCanteen += Number(String(p.canteenTotal).replace(/,/g, '')) || 0;
-            totalReceived += Number(String(p.receivedAmount).replace(/,/g, '')) || 0;
-          });
-          const netExpected = totalFees + totalLaundry + totalCanteen - totalReceived;
-          const incomeEl = document.getElementById('overhead-total-income');
-          if (incomeEl) {
-            incomeEl.innerText = formatCurrency(netExpected);
-            const parentContainer = incomeEl.parentElement.parentElement;
-            const oldBreakdown = document.getElementById('income-breakdown-details');
-            if (oldBreakdown) oldBreakdown.remove();
-            const oldSubtitle = incomeEl.nextElementSibling;
-            if (oldSubtitle) oldSubtitle.style.display = 'none';
-            const breakdownHtml = `
-             <div id="income-breakdown-details" class="mt-3 text-xs text-emerald-800 font-medium space-y-1 border-t border-emerald-200 pt-2">
-               <div class="flex justify-between"><span>Remaining Fees:</span> <span>${formatNumber(
-                 totalFees - totalReceived
-               )}</span></div>
-               <div class="flex justify-between"><span>Laundry:</span> <span>${formatNumber(
-                 totalLaundry
-               )}</span></div>
-               <div class="flex justify-between"><span>Canteen:</span> <span>${formatNumber(
-                 totalCanteen
-               )}</span></div>
-             </div>
-           `;
-            incomeEl.parentElement.insertAdjacentHTML('afterend', breakdownHtml);
-          }
-        } catch (e) {
-          console.error(e);
-        }
-      }
     </script>
   </head>
 
@@ -6105,12 +6373,20 @@
           Psych Sessions
         </button>
         <button
-          id="nav-overheads"
+          id="nav-overheads-finance"
           onclick="window.navigateTo('overheads-view')"
           class="nav-item w-full text-left px-4 py-3 rounded-lg text-emerald-800 hover:bg-emerald-100/80 border border-transparent transition"
           style="display: none"
         >
-          Overheads
+          <i class="fas fa-coins mr-2"></i>Overheads & Finance
+        </button>
+        <button
+          id="nav-monthly-overheads"
+          onclick="window.navigateTo('monthly-overheads-view')"
+          class="nav-item w-full text-left px-4 py-3 rounded-lg text-emerald-800 hover:bg-emerald-100/80 border border-transparent transition"
+          style="display: none"
+        >
+          <i class="fas fa-calculator mr-2"></i>Monthly Overheads
         </button>
         <button
           id="nav-attendance"
@@ -7522,6 +7798,75 @@
             >
               <i class="fas fa-check-circle text-4xl mb-3 text-green-200"></i>
               <p>No pending bills. Great job!</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ================= OVERHEADS VIEW SECTION (ADMIN ONLY) ================= -->
+      <section id="monthly-overheads-view" class="view-section hidden p-4 md:p-8">
+        <div class="mb-6">
+          <h2 class="text-2xl font-bold text-green-900">
+            <i class="fas fa-calculator mr-2"></i>Monthly Overheads
+          </h2>
+          <p class="text-sm text-gray-500">
+            Track daily expenses, income, and calculate monthly profit (Admin only).
+          </p>
+        </div>
+
+        <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
+          <!-- Month/Year Selector -->
+          <div class="flex flex-wrap items-center gap-4 mb-6">
+            <div>
+              <label class="block text-xs font-bold text-gray-600 uppercase mb-1">Month</label>
+              <select
+                id="monthly-overheads-month-select"
+                class="border border-gray-300 rounded px-3 py-2 bg-gray-50 focus:ring-2 focus:ring-green-500 focus:border-green-500"
+              >
+                <option value="1">January</option>
+                <option value="2">February</option>
+                <option value="3">March</option>
+                <option value="4">April</option>
+                <option value="5">May</option>
+                <option value="6">June</option>
+                <option value="7">July</option>
+                <option value="8">August</option>
+                <option value="9">September</option>
+                <option value="10">October</option>
+                <option value="11">November</option>
+                <option value="12">December</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-gray-600 uppercase mb-1">Year</label>
+              <select
+                id="monthly-overheads-year-select"
+                class="border border-gray-300 rounded px-3 py-2 bg-gray-50 focus:ring-2 focus:ring-green-500 focus:border-green-500"
+              ></select>
+            </div>
+            <div class="mt-5">
+              <button
+                onclick="loadMonthlyOverheadsTable()"
+                class="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2 rounded-lg font-semibold shadow-md transition"
+              >
+                <i class="fas fa-sync-alt mr-2"></i> Load
+              </button>
+            </div>
+            <div class="ml-auto mt-5">
+              <div id="monthly-overheads-profit-display" class="text-right">
+                <!-- Profit display will be inserted here -->
+              </div>
+            </div>
+          </div>
+
+          <!-- Table Container -->
+          <div class="overflow-x-auto border rounded-lg bg-white">
+            <div id="monthly-overheads-table-container">
+              <!-- Table will be dynamically generated here -->
+              <div class="text-center py-12 text-gray-400">
+                <i class="fas fa-table text-4xl mb-3"></i>
+                <p>Select a month and click "Load" to view monthly overheads</p>
+              </div>
             </div>
           </div>
         </div>
