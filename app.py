@@ -856,30 +856,38 @@ def get_canteen_monthly_table():
         
         # Get all patients with their allowances
         patients_cursor = mongo.db.patients.find({}, {
-            'name': 1, 
-            'monthlyAllowance': 1, 
+            'name': 1,
+            'monthlyAllowance': 1,
             'isDischarged': 1
         }).sort('name', 1)
         
         patients_data = []
         
+        def _safe_int(raw_val: object) -> int:
+            """Best-effort int conversion that strips non-digits."""
+            try:
+                cleaned = ''.join(ch for ch in str(raw_val or '0') if ch.isdigit() or ch == '-')
+                return int(cleaned) if cleaned not in ('', '-') else 0
+            except Exception:
+                return 0
+
         for patient in patients_cursor:
             patient_id = patient['_id']
-            patient_name = patient['name']
-            allowance_str = patient.get('monthlyAllowance', '0')
-            # Handle empty string or None
-            if not allowance_str or allowance_str.strip() == '':
-                allowance_str = '0'
-            monthly_allowance = int(allowance_str.replace(',', ''))
+            patient_name = patient.get('name', 'Unknown')
+            monthly_allowance = _safe_int(patient.get('monthlyAllowance', 0))
             is_discharged = patient.get('isDischarged', False)
             
             # Calculate Old Balance (previous months' allowances - previous spending + adjustments)
             # Previous months means everything before start_of_month
+            # Note: Old records don't have entry_type, treat them as daily entries (not 'other')
             previous_sales_pipeline = [
                 {'$match': {
                     'patient_id': patient_id,
                     'date': {'$lt': start_of_month},
-                    'entry_type': {'$ne': 'other'}  # Exclude "Other" column entries
+                    '$or': [
+                        {'entry_type': {'$exists': False}},  # Old records without entry_type
+                        {'entry_type': {'$ne': 'other'}}      # New records that are not 'other'
+                    ]
                 }},
                 {'$group': {'_id': None, 'total': {'$sum': '$amount'}}}
             ]
@@ -916,11 +924,15 @@ def get_canteen_monthly_table():
             old_balance = previous_allowances_total + previous_adjustments - previous_sales_total + monthly_allowance
             
             # Get current month's daily entries (1-31)
+            # Note: Old records don't have entry_type, include them as daily entries
             daily_entries = {}
             current_month_sales = mongo.db.canteen_sales.find({
                 'patient_id': patient_id,
                 'date': {'$gte': start_of_month, '$lt': end_of_month},
-                'entry_type': {'$ne': 'other'}
+                '$or': [
+                    {'entry_type': {'$exists': False}},  # Old records
+                    {'entry_type': {'$ne': 'other'}}      # New daily records
+                ]
             })
             
             for sale in current_month_sales:
@@ -943,10 +955,14 @@ def get_canteen_monthly_table():
             month_total = sum(daily_entries.values()) + other_amount
             
             # Calculate Total (all-time spending)
+            # Note: Include old records without entry_type
             all_time_pipeline = [
                 {'$match': {
                     'patient_id': patient_id,
-                    'entry_type': {'$ne': 'other'}
+                    '$or': [
+                        {'entry_type': {'$exists': False}},  # Old records
+                        {'entry_type': {'$ne': 'other'}}      # New daily records
+                    ]
                 }},
                 {'$group': {'_id': None, 'total': {'$sum': '$amount'}}}
             ]
