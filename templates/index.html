@@ -2487,7 +2487,7 @@
           const emptyMessage = normalizedSearch
             ? 'No patients match your search.'
             : 'No records found.';
-          const colspanCount = isAdmin ? 12 : 9;
+          const colspanCount = isAdmin ? 13 : 10;
           tbody.innerHTML = `
             <tr>
               <td colspan="${colspanCount}" class="p-6 text-center text-gray-400">${emptyMessage}</td>
@@ -2597,19 +2597,12 @@
             monthNames[admissionDate.getMonth()]
           } ${admissionDate.getDate()} ${admissionDate.getFullYear()}`;
 
-          // Format days progress as "X months and Y days of Z months"
-          const totalMonths = Math.floor(daysElapsed / 30);
-          const remainingDays = daysElapsed % 30;
-          const targetMonths = 3; // 90 days = 3 months
+          // Format days progress as "X/90" and months as "X months"
+          const targetDays = 90;
+          const daysProgress = `${daysElapsed}/${targetDays}`;
 
-          let daysProgress;
-          if (totalMonths === 0) {
-            daysProgress = `${remainingDays} days of ${targetMonths} months`;
-          } else if (remainingDays === 0) {
-            daysProgress = `${totalMonths} months of ${targetMonths} months`;
-          } else {
-            daysProgress = `${totalMonths} month${totalMonths > 1 ? 's' : ''} and ${remainingDays} day${remainingDays > 1 ? 's' : ''} of ${targetMonths} months`;
-          }
+          const totalMonths = Math.floor(daysElapsed / 30);
+          const monthsProgress = totalMonths === 1 ? '1 month' : `${totalMonths} months`;
 
           if (isAdmin) {
             tr.innerHTML = `<td class="px-3 py-2 font-medium text-gray-700 whitespace-nowrap text-xs">${serialNo}</td>
@@ -2627,6 +2620,7 @@
                             <td class="px-3 py-2 font-semibold text-green-700 whitespace-nowrap">${fee}</td>
                             <td class="px-3 py-2 text-gray-600 whitespace-nowrap text-xs">${formattedAdmissionDate}</td>
                             <td class="px-3 py-2 text-center text-gray-700 font-medium whitespace-nowrap text-xs">${daysProgress}</td>
+                            <td class="px-3 py-2 text-center text-gray-700 font-medium whitespace-nowrap text-xs">${monthsProgress}</td>
                             <td class="px-3 py-2 font-semibold text-blue-700 whitespace-nowrap">${receivedAmount}</td>
                             <td class="px-3 py-2 font-semibold ${
                               pendingValue > 0 ? 'text-red-600' : 'text-green-700'
@@ -2647,6 +2641,7 @@
                             <td class="px-3 py-2 text-gray-600 whitespace-nowrap">${drugDisplay}</td>
                             <td class="px-3 py-2 text-gray-600 whitespace-nowrap text-xs">${formattedAdmissionDate}</td>
                             <td class="px-3 py-2 text-center text-gray-700 font-medium whitespace-nowrap text-xs">${daysProgress}</td>
+                            <td class="px-3 py-2 text-center text-gray-700 font-medium whitespace-nowrap text-xs">${monthsProgress}</td>
                             <td class="px-3 py-2 text-right">${actionControls}</td>`;
           }
           tbody.appendChild(tr);
@@ -7110,6 +7105,9 @@
                 </th>
                 <th class="px-3 py-2 text-center whitespace-nowrap font-semibold text-xs">
                   Days Done
+                </th>
+                <th class="px-3 py-2 text-center whitespace-nowrap font-semibold text-xs">
+                  Months Done
                 </th>
                 <th
                   id="header-received"
