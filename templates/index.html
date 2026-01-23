@@ -2605,44 +2605,44 @@
           const monthsProgress = totalMonths === 1 ? '1 month' : `${totalMonths} months`;
 
           if (isAdmin) {
-            tr.innerHTML = `<td class="px-3 py-2 font-medium text-gray-700 whitespace-nowrap text-xs">${serialNo}</td>
-                            <td class="px-3 py-2 font-medium whitespace-nowrap">${
+            tr.innerHTML = `<td class="px-2 py-2 font-medium text-gray-700 whitespace-nowrap text-xs">${serialNo}</td>
+                            <td class="px-2 py-2 font-medium whitespace-nowrap">${
                               p.name || '-'
                             }</td>
-                            <td class="px-3 py-2 text-gray-600 whitespace-nowrap">${
+                            <td class="px-2 py-2 text-gray-600 whitespace-nowrap">${
                               p.fatherName || '-'
                             }</td>
-                            <td class="px-3 py-2 text-gray-600 whitespace-nowrap">${
+                            <td class="px-2 py-2 text-gray-600 whitespace-nowrap text-xs">${formattedAdmissionDate}</td>
+                            <td class="px-2 py-2 text-gray-600 whitespace-nowrap">${
                               p.contactNo || '-'
                             }</td>
-                            <td class="px-3 py-2 text-gray-600 whitespace-nowrap">${areaDisplay}</td>
-                            <td class="px-3 py-2 text-gray-600 whitespace-nowrap">${drugDisplay}</td>
-                            <td class="px-3 py-2 font-semibold text-green-700 whitespace-nowrap">${fee}</td>
-                            <td class="px-3 py-2 text-gray-600 whitespace-nowrap text-xs">${formattedAdmissionDate}</td>
-                            <td class="px-3 py-2 text-center text-gray-700 font-medium whitespace-nowrap text-xs">${daysProgress}</td>
-                            <td class="px-3 py-2 text-center text-gray-700 font-medium whitespace-nowrap text-xs">${monthsProgress}</td>
-                            <td class="px-3 py-2 font-semibold text-blue-700 whitespace-nowrap">${receivedAmount}</td>
-                            <td class="px-3 py-2 font-semibold ${
+                            <td class="px-2 py-2 text-gray-600 whitespace-nowrap">${areaDisplay}</td>
+                            <td class="px-2 py-2 text-gray-600 whitespace-nowrap">${drugDisplay}</td>
+                            <td class="px-2 py-2 font-semibold text-green-700 whitespace-nowrap">${fee}</td>
+                            <td class="px-2 py-2 text-center text-gray-700 font-medium whitespace-nowrap text-xs">${daysProgress}</td>
+                            <td class="px-2 py-2 text-center text-gray-700 font-medium whitespace-nowrap text-xs">${monthsProgress}</td>
+                            <td class="px-2 py-2 font-semibold text-blue-700 whitespace-nowrap">${receivedAmount}</td>
+                            <td class="px-2 py-2 font-semibold ${
                               pendingValue > 0 ? 'text-red-600' : 'text-green-700'
                             } whitespace-nowrap">${pendingAmount}</td>
-                            <td class="px-3 py-2 text-right">${actionControls}</td>`;
+                            <td class="px-2 py-2 text-right">${actionControls}</td>`;
           } else {
-            tr.innerHTML = `<td class="px-3 py-2 font-medium text-gray-700 whitespace-nowrap text-xs">${serialNo}</td>
-                            <td class="px-3 py-2 font-medium whitespace-nowrap">${
+            tr.innerHTML = `<td class="px-2 py-2 font-medium text-gray-700 whitespace-nowrap text-xs">${serialNo}</td>
+                            <td class="px-2 py-2 font-medium whitespace-nowrap">${
                               p.name || '-'
                             }</td>
-                            <td class="px-3 py-2 text-gray-600 whitespace-nowrap">${
+                            <td class="px-2 py-2 text-gray-600 whitespace-nowrap">${
                               p.fatherName || '-'
                             }</td>
-                            <td class="px-3 py-2 text-gray-600 whitespace-nowrap">${
+                            <td class="px-2 py-2 text-gray-600 whitespace-nowrap text-xs">${formattedAdmissionDate}</td>
+                            <td class="px-2 py-2 text-gray-600 whitespace-nowrap">${
                               p.contactNo || '-'
                             }</td>
-                            <td class="px-3 py-2 text-gray-600 whitespace-nowrap">${areaDisplay}</td>
-                            <td class="px-3 py-2 text-gray-600 whitespace-nowrap">${drugDisplay}</td>
-                            <td class="px-3 py-2 text-gray-600 whitespace-nowrap text-xs">${formattedAdmissionDate}</td>
-                            <td class="px-3 py-2 text-center text-gray-700 font-medium whitespace-nowrap text-xs">${daysProgress}</td>
-                            <td class="px-3 py-2 text-center text-gray-700 font-medium whitespace-nowrap text-xs">${monthsProgress}</td>
-                            <td class="px-3 py-2 text-right">${actionControls}</td>`;
+                            <td class="px-2 py-2 text-gray-600 whitespace-nowrap">${areaDisplay}</td>
+                            <td class="px-2 py-2 text-gray-600 whitespace-nowrap">${drugDisplay}</td>
+                            <td class="px-2 py-2 text-center text-gray-700 font-medium whitespace-nowrap text-xs">${daysProgress}</td>
+                            <td class="px-2 py-2 text-center text-gray-700 font-medium whitespace-nowrap text-xs">${monthsProgress}</td>
+                            <td class="px-2 py-2 text-right">${actionControls}</td>`;
           }
           tbody.appendChild(tr);
         });
@@ -3846,9 +3846,9 @@
                 <th class="px-3 py-3 text-center text-xs font-bold uppercase border border-emerald-700">Canteen</th>
                 <th class="px-3 py-3 text-center text-xs font-bold uppercase border border-emerald-700">Others</th>
                 <th class="px-3 py-3 text-center text-xs font-bold uppercase border border-emerald-700">Pay/Advance</th>
-                <th class="px-3 py-3 text-center text-xs font-bold uppercase border border-emerald-700">Employee</th>
                 <th class="px-3 py-3 text-center text-xs font-bold uppercase border border-emerald-700 bg-emerald-700">Total Expense</th>
                 <th class="px-3 py-3 text-center text-xs font-bold uppercase border border-emerald-700">Income</th>
+                <th class="px-1 py-3 text-center text-xs font-bold uppercase border border-emerald-700 w-20">Employee <span class="text-emerald-200 font-normal text-[10px]">(Optional)</span></th>
               </tr>
             </thead>
             <tbody class="bg-white">
@@ -3908,10 +3908,6 @@
                   data-date="${dateStr}"
                   onblur="saveMonthlyOverheadCell(this)"
                   onfocus="selectAllText(this)">${payAdvance || ''}</td>
-              <td class="px-3 py-2 border border-gray-200 cursor-pointer hover:bg-yellow-50 relative" 
-                  data-field="employee_names"
-                  data-date="${dateStr}"
-                  onclick="openMonthlyEmployeeDropdown(this)">${employeeNames}</td>
               <td class="px-3 py-2 text-right border border-gray-200 bg-emerald-100 font-bold text-emerald-900">${rowExpense ? formatCurrency(rowExpense) : ''}</td>
               <td class="px-3 py-2 text-right border border-gray-200 cursor-pointer hover:bg-yellow-50" 
                   contenteditable="true"
@@ -3919,6 +3915,10 @@
                   data-date="${dateStr}"
                   onblur="saveMonthlyOverheadCell(this)"
                   onfocus="selectAllText(this)">${income || ''}</td>
+              <td class="px-1 py-2 border border-gray-200 cursor-pointer hover:bg-yellow-50 relative text-gray-600 text-xs w-20" 
+                  data-field="employee_names"
+                  data-date="${dateStr}"
+                  onclick="openMonthlyEmployeeDropdown(this)">${employeeNames || '<span class="text-gray-400 italic text-xs">Optional</span>'}</td>
             </tr>
           `;
         }
@@ -3926,15 +3926,15 @@
         // Totals row
         const profit = totalIncome - totalExpense;
         tableHTML += `
-            <tr class="bg-emerald-700 text-white font-bold">
-              <td colspan="2" class="px-3 py-3 text-center border border-emerald-800 uppercase">Total</td>
-              <td class="px-3 py-3 text-right border border-emerald-800">${formatCurrency(totalKitchen)}</td>
-              <td class="px-3 py-3 text-right border border-emerald-800">${formatCurrency(totalCanteen)}</td>
-              <td class="px-3 py-3 text-right border border-emerald-800">${formatCurrency(totalOthers)}</td>
-              <td class="px-3 py-3 text-right border border-emerald-800">${formatCurrency(totalPayAdvance)}</td>
-              <td class="px-3 py-3 border border-emerald-800"></td>
-              <td class="px-3 py-3 text-right border border-emerald-800 bg-emerald-800">${formatCurrency(totalExpense)}</td>
-              <td class="px-3 py-3 text-right border border-emerald-800">${formatCurrency(totalIncome)}</td>
+            <tr class="bg-emerald-800 text-white font-bold" style="background-color: #064e3b !important;">
+              <td colspan="2" class="px-3 py-3 text-center border border-emerald-900 uppercase text-white" style="background-color: #064e3b !important; color: white !important;">Total</td>
+              <td class="px-3 py-3 text-right border border-emerald-900 text-white" style="background-color: #064e3b !important; color: white !important;">${formatCurrency(totalKitchen)}</td>
+              <td class="px-3 py-3 text-right border border-emerald-900 text-white" style="background-color: #064e3b !important; color: white !important;">${formatCurrency(totalCanteen)}</td>
+              <td class="px-3 py-3 text-right border border-emerald-900 text-white" style="background-color: #064e3b !important; color: white !important;">${formatCurrency(totalOthers)}</td>
+              <td class="px-3 py-3 text-right border border-emerald-900 text-white" style="background-color: #064e3b !important; color: white !important;">${formatCurrency(totalPayAdvance)}</td>
+              <td class="px-3 py-3 text-right border border-emerald-900 bg-emerald-900 text-white" style="background-color: #064e3b !important; color: white !important;">${formatCurrency(totalExpense)}</td>
+              <td class="px-3 py-3 text-right border border-emerald-900 text-white" style="background-color: #064e3b !important; color: white !important;">${formatCurrency(totalIncome)}</td>
+              <td class="px-1 py-3 border border-emerald-900 w-20 text-white" style="background-color: #064e3b !important; color: white !important;"></td>
             </tr>
           </tbody>
         </table>
@@ -3978,8 +3978,8 @@
         const kitchen = parseFloat(cells[2].textContent.trim()) || 0;
         const others = parseFloat(cells[4].textContent.trim()) || 0;
         const payAdvance = parseFloat(cells[5].textContent.trim()) || 0;
-        const employeeNames = cells[6].textContent.trim();
-        const income = parseFloat(cells[8].textContent.trim()) || 0;
+        const employeeNames = cells[8].textContent.trim();
+        const income = parseFloat(cells[7].textContent.trim()) || 0;
         const canteenAuto = monthlyCanteenDailyData[date] || 0;
 
         try {
@@ -4027,7 +4027,8 @@
         const dropdown = document.createElement('div');
         dropdown.className = 'bg-white rounded-lg shadow-xl p-4 w-96 max-h-96 overflow-y-auto';
         dropdown.innerHTML = `
-          <h3 class="font-bold text-gray-800 mb-3 text-lg">Select Employee(s)</h3>
+          <h3 class="font-bold text-gray-800 mb-2 text-lg">Select Employee(s)</h3>
+          <p class="text-xs text-gray-500 mb-3 italic">This field is optional - leave empty if not applicable</p>
           <input type="text" 
                  id="monthly-employee-search" 
                  placeholder="Search employees..." 
@@ -4035,6 +4036,7 @@
           <div id="monthly-employee-list" class="space-y-1"></div>
           <div class="mt-4 flex gap-2">
             <button onclick="saveMonthlyEmployeeSelection('${date}')" class="flex-1 bg-emerald-600 text-white px-4 py-2 rounded hover:bg-emerald-700">Save</button>
+            <button onclick="clearMonthlyEmployeeSelection('${date}')" class="flex-1 bg-orange-500 text-white px-4 py-2 rounded hover:bg-orange-600">Clear</button>
             <button onclick="closeMonthlyEmployeeDropdown()" class="flex-1 bg-gray-300 text-gray-700 px-4 py-2 rounded hover:bg-gray-400">Cancel</button>
           </div>
         `;
@@ -4103,7 +4105,7 @@
           const kitchen = parseFloat(cells[2].textContent.trim()) || 0;
           const others = parseFloat(cells[4].textContent.trim()) || 0;
           const payAdvance = parseFloat(cells[5].textContent.trim()) || 0;
-          const income = parseFloat(cells[8].textContent.trim()) || 0;
+          const income = parseFloat(cells[7].textContent.trim()) || 0;
           const canteenAuto = monthlyCanteenDailyData[date] || 0;
 
           try {
@@ -4138,6 +4140,53 @@
       window.closeMonthlyEmployeeDropdown = function () {
         const overlay = document.querySelector('.employee-dropdown-overlay');
         if (overlay) overlay.remove();
+      };
+
+      window.clearMonthlyEmployeeSelection = async function (date) {
+        const [year, month, day] = date.split('-').map(Number);
+
+        // Find the cell for this date
+        const cell = document.querySelector(`td[data-field="employee_names"][data-date="${date}"]`);
+        if (cell) {
+          cell.innerHTML = '<span class="text-gray-400 italic text-xs">Optional</span>';
+
+          // Get current row values
+          const row = cell.parentElement;
+          const cells = Array.from(row.querySelectorAll('td'));
+
+          const kitchen = parseFloat(cells[2].textContent.trim()) || 0;
+          const others = parseFloat(cells[4].textContent.trim()) || 0;
+          const payAdvance = parseFloat(cells[5].textContent.trim()) || 0;
+          const income = parseFloat(cells[7].textContent.trim()) || 0;
+          const canteenAuto = monthlyCanteenDailyData[date] || 0;
+
+          try {
+            const res = await fetch('/api/overheads/entry', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                date,
+                month,
+                year,
+                kitchen,
+                canteen_auto: canteenAuto,
+                others,
+                pay_advance: payAdvance,
+                employee_names: '',
+                income,
+              }),
+            });
+
+            if (res.ok) {
+              closeMonthlyEmployeeDropdown();
+            } else {
+              alert('Failed to clear employee selection');
+            }
+          } catch (e) {
+            console.error('Error clearing employee selection:', e);
+            alert('Failed to clear employee selection');
+          }
+        }
       };
 
       window.refreshOverheadsCanteenColumn = async function () {
@@ -7082,46 +7131,46 @@
                 <th class="px-3 py-2 text-left whitespace-nowrap font-semibold text-xs">
                   Serial No
                 </th>
-                <th class="px-3 py-2 text-left whitespace-nowrap font-semibold text-xs">Name</th>
-                <th class="px-3 py-2 text-left whitespace-nowrap font-semibold text-xs">
+                <th class="px-2 py-2 text-left whitespace-nowrap font-semibold text-xs">Name</th>
+                <th class="px-2 py-2 text-left whitespace-nowrap font-semibold text-xs">
                   Father Name
+                </th>
+                <th class="px-2 py-2 text-left whitespace-nowrap font-semibold text-xs">
+                  Admission Date
                 </th>
                 <th
                   id="header-contact"
-                  class="px-3 py-2 text-left whitespace-nowrap font-semibold text-xs"
+                  class="px-2 py-2 text-left whitespace-nowrap font-semibold text-xs"
                 >
                   Contact
                 </th>
-                <th class="px-3 py-2 text-left whitespace-nowrap font-semibold text-xs">Area</th>
-                <th class="px-3 py-2 text-left whitespace-nowrap font-semibold text-xs">Drug</th>
+                <th class="px-2 py-2 text-left whitespace-nowrap font-semibold text-xs">Area</th>
+                <th class="px-2 py-2 text-left whitespace-nowrap font-semibold text-xs">Drug</th>
                 <th
                   id="header-fee"
-                  class="px-3 py-2 text-left whitespace-nowrap font-semibold text-xs admin-only-column"
+                  class="px-2 py-2 text-left whitespace-nowrap font-semibold text-xs admin-only-column"
                 >
                   Fee
                 </th>
-                <th class="px-3 py-2 text-left whitespace-nowrap font-semibold text-xs">
-                  Admission Date
-                </th>
-                <th class="px-3 py-2 text-center whitespace-nowrap font-semibold text-xs">
+                <th class="px-2 py-2 text-center whitespace-nowrap font-semibold text-xs">
                   Days Done
                 </th>
-                <th class="px-3 py-2 text-center whitespace-nowrap font-semibold text-xs">
+                <th class="px-2 py-2 text-center whitespace-nowrap font-semibold text-xs">
                   Months Done
                 </th>
                 <th
                   id="header-received"
-                  class="px-3 py-2 text-left whitespace-nowrap font-semibold text-xs admin-only-column"
+                  class="px-2 py-2 text-left whitespace-nowrap font-semibold text-xs admin-only-column"
                 >
                   Received Amt
                 </th>
                 <th
                   id="header-pending"
-                  class="px-3 py-2 text-left whitespace-nowrap font-semibold text-xs admin-only-column"
+                  class="px-2 py-2 text-left whitespace-nowrap font-semibold text-xs admin-only-column"
                 >
                   Pending Amt
                 </th>
-                <th class="px-3 py-2 text-right whitespace-nowrap font-semibold text-xs">
+                <th class="px-2 py-2 text-right whitespace-nowrap font-semibold text-xs">
                   Actions
                 </th>
               </tr>
