@@ -1724,8 +1724,13 @@
         if (viewId === 'attendance-view') renderAttendanceView();
         if (viewId === 'daily-report-view') {
           const datePicker = document.getElementById('report-date-picker');
-          if (!datePicker.value) {
-            datePicker.value = new Date().toISOString().split('T')[0];
+          if (datePicker && !datePicker.value) {
+            // Only set date on first load, don't auto-update after that
+            const today = new Date();
+            const localIso = new Date(today.getTime() - today.getTimezoneOffset() * 60000)
+              .toISOString()
+              .split('T')[0];
+            datePicker.value = localIso;
           }
           loadDailyReport();
         }
@@ -2259,15 +2264,14 @@
         // --- NEW: Load Daily Report ---
         const datePicker = document.getElementById('report-date-picker');
         if (datePicker && !datePicker.value) {
-          // Set default to today if empty
+          // Set default to today only on very first load
           const today = new Date();
-          // Adjust for timezone offset to prevent "yesterday" bug
           const localIso = new Date(today.getTime() - today.getTimezoneOffset() * 60000)
             .toISOString()
             .split('T')[0];
           datePicker.value = localIso;
         }
-        // Call the loader
+        // Load report with current date picker value (doesn't auto-update to today)
         await loadDailyReport();
       }
 
@@ -5426,12 +5430,30 @@
         renderSplitTable('night', NIGHT_CONFIG, activePatients, reportMap);
       }
 
-      // Toggle Status: Empty -> Done (Green) -> Not Done (Red) -> Complaint (Yellow) -> Empty
-      window.cycleReportStatus = async function (btnElement, patientId, timeSlot, currentStatus) {
+      // Toggle Status: Day -> Empty -> Done -> Not Done -> Complaint -> Empty
+      // Night -> Empty -> Done -> Not Done -> Med -> WC -> Empty
+      window.cycleReportStatus = async function (
+        btnElement,
+        patientId,
+        timeSlot,
+        currentStatus,
+        reportType
+      ) {
         let nextStatus = 'done';
-        if (currentStatus === 'done') nextStatus = 'not_done';
-        else if (currentStatus === 'not_done') nextStatus = 'complaint';
-        else if (currentStatus === 'complaint') nextStatus = '';
+
+        // Determine which cycle to use based on report type
+        if (reportType === 'night') {
+          // Night report cycle: Empty -> Done -> Not Done -> Med -> W -> Empty
+          if (currentStatus === 'done') nextStatus = 'not_done';
+          else if (currentStatus === 'not_done') nextStatus = 'med';
+          else if (currentStatus === 'med') nextStatus = 'wc';
+          else if (currentStatus === 'wc') nextStatus = '';
+        } else {
+          // Day report cycle: Empty -> Done -> Not Done -> Complaint -> Empty
+          if (currentStatus === 'done') nextStatus = 'not_done';
+          else if (currentStatus === 'not_done') nextStatus = 'complaint';
+          else if (currentStatus === 'complaint') nextStatus = '';
+        }
 
         // Optimistic UI Update
         btnElement.className = `w-full h-6 rounded flex items-center justify-center transition-all text-xs ${getStatusClass(
@@ -5442,7 +5464,7 @@
         btnElement.setAttribute('aria-label', statusLabelMap[nextStatus] || 'No Status');
         btnElement.setAttribute(
           'onclick',
-          `cycleReportStatus(this, '${patientId}', '${timeSlot}', '${nextStatus}')`
+          `cycleReportStatus(this, '${patientId}', '${timeSlot}', '${nextStatus}', '${reportType}')`
         );
 
         // Send to Backend
@@ -5469,6 +5491,8 @@
         done: 'Done',
         not_done: 'Not Done',
         complaint: 'Emergency / Complaint',
+        med: 'Medicine',
+        wc: 'Washroom',
         '': 'No Status',
         null: 'No Status',
         undefined: 'No Status',
@@ -5478,6 +5502,8 @@
         done: '✓',
         not_done: '✕',
         complaint: '!',
+        med: 'Med',
+        wc: 'WC',
       };
 
       function renderSplitTable(type, columns, patients, reportMap) {
@@ -5557,7 +5583,7 @@
 
             rowHtml += `
             <td class="p-0.5 border text-center align-middle">
-              <button onclick="cycleReportStatus(this, '${pId}', '${col.key}', '${status || ''}')" 
+              <button onclick="cycleReportStatus(this, '${pId}', '${col.key}', '${status || ''}', '${type}')" 
                       class="w-full h-6 rounded flex items-center justify-center transition-all text-xs ${cellClass}"
                       data-status="${status || ''}"
                       data-patient="${pId}"
@@ -5870,6 +5896,8 @@
         if (status === 'not_done') return 'bg-red-100 hover:bg-red-200 border border-red-300';
         if (status === 'complaint')
           return 'bg-yellow-100 hover:bg-yellow-200 border border-yellow-300';
+        if (status === 'med') return 'bg-blue-100 hover:bg-blue-200 border border-blue-300';
+        if (status === 'wc') return 'bg-purple-100 hover:bg-purple-200 border border-purple-300';
         return 'bg-gray-50 hover:bg-gray-100 border border-gray-100';
       }
 
@@ -5878,6 +5906,8 @@
         if (status === 'not_done') return '<i class="fas fa-times text-red-600 text-sm"></i>';
         if (status === 'complaint')
           return '<i class="fas fa-exclamation text-yellow-600 text-sm"></i>';
+        if (status === 'med') return '<span class="text-blue-600 text-xs font-bold">Med</span>';
+        if (status === 'wc') return '<span class="text-purple-600 text-xs font-bold">WC</span>';
         return '<span class="text-gray-200 text-xs">•</span>';
       }
 
