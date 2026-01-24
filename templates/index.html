@@ -2551,7 +2551,8 @@
           const receivedValue =
             parseInt(String(p.receivedAmount || '0').replace(/,/g, ''), 10) || 0;
           const receivedAmount = formatCurrency(receivedValue);
-          const pendingValue = feeValue - receivedValue;
+          const canteenSpentValue = p.canteenSpent || 0;
+          const pendingValue = feeValue - receivedValue + canteenSpentValue;
           const pendingAmount = formatCurrency(pendingValue);
           const areaDisplay = p.area || p.address || '-';
           const drugDisplay = p.drug || '-';
@@ -9726,12 +9727,19 @@
 
           for (let d = 1; d <= daysInMonth; d++) {
             const mark = attendance[emp.id]?.[String(d)] || '';
-            const color = mark === 'P' ? 'bg-green-200' : mark === 'A' ? 'bg-red-200' : '';
+            const color =
+              mark === 'P'
+                ? 'bg-green-200'
+                : mark === 'A'
+                  ? 'bg-red-200'
+                  : mark === 'H'
+                    ? 'bg-yellow-200'
+                    : '';
 
             rowHTML += `
         <td class="border text-center cursor-pointer ${color}"
             data-emp="${emp.id}" data-day="${d}">
-          ${mark === 'P' ? '✔️' : mark === 'A' ? '❌' : ''}
+          ${mark === 'P' ? '✔️' : mark === 'A' ? '❌' : mark === 'H' ? '🕐' : ''}
         </td>
       `;
           }
@@ -9747,11 +9755,12 @@
             const day = cell.dataset.day;
 
             let current = cell.textContent.trim();
-            let mark = current === '' ? 'P' : current === '✔️' ? 'A' : '';
+            let mark = current === '' ? 'P' : current === '✔️' ? 'A' : current === '❌' ? 'H' : '';
 
-            cell.textContent = mark === 'P' ? '✔️' : mark === 'A' ? '❌' : '';
+            cell.textContent = mark === 'P' ? '✔️' : mark === 'A' ? '❌' : mark === 'H' ? '🕐' : '';
             cell.classList.toggle('bg-green-200', mark === 'P');
             cell.classList.toggle('bg-red-200', mark === 'A');
+            cell.classList.toggle('bg-yellow-200', mark === 'H');
 
             await fetch('/api/attendance', {
               method: 'POST',

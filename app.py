@@ -588,9 +588,23 @@ def get_patients():
     if not check_db(): return jsonify([])
     try:
         patients_cursor = mongo.db.patients.find()
+        
+        # Aggregate total canteen spending for all patients
+        canteen_totals_agg = list(mongo.db.canteen_sales.aggregate([
+            {'$match': {
+                '$or': [
+                    {'entry_type': {'$exists': False}},
+                    {'entry_type': {'$ne': 'other'}}
+                ]
+            }},
+            {'$group': {'_id': '$patient_id', 'total': {'$sum': '$amount'}}}
+        ]))
+        canteen_totals_map = {str(item['_id']): item['total'] for item in canteen_totals_agg}
+        
         patients = []
         for p in patients_cursor:
-            p['_id'] = str(p['_id'])
+            patient_id = str(p['_id'])
+            p['_id'] = patient_id
             # Ensure monthlyFee is present for canteen view logic
             p['monthlyFee'] = p.get('monthlyFee', '0')
             p['photo1'] = p.get('photo1', '')
@@ -598,6 +612,10 @@ def get_patients():
             p['photo3'] = p.get('photo3', '')
             p['isDischarged'] = p.get('isDischarged', False)
             p['dischargeDate'] = p.get('dischargeDate')
+            
+            # Include canteen spending as separate field
+            p['canteenSpent'] = canteen_totals_map.get(patient_id, 0)
+            
             patients.append(p)
         return jsonify(patients)
     except Exception as e:
@@ -1051,21 +1069,9 @@ def get_canteen_monthly_table():
             previous_sales_total = previous_sales_map.get(patient_id_str, 0)
             previous_adjustments = previous_adj_map.get(patient_id_str, 0)
             
-            # Count number of previous months since admission
-            admission_date_str = patient.get('admissionDate')
-            months_count = 0
-            if admission_date_str:
-                try:
-                    admission_date = datetime.fromisoformat(admission_date_str.replace('Z', '+00:00'))
-                    months_count = (start_of_month.year - admission_date.year) * 12 + (start_of_month.month - admission_date.month)
-                    if months_count < 0:
-                        months_count = 0
-                except:
-                    months_count = 0
-            
-            # Old Balance = (previous months' allowances + previous adjustments - previous sales) + current month allowance
-            previous_allowances_total = monthly_allowance * months_count
-            calculated_balance = previous_allowances_total + previous_adjustments - previous_sales_total + monthly_allowance
+            # Old Balance = Sum of total canteen money used in all previous months since admission
+            # This is simply the total of all canteen sales before the current viewing month
+            calculated_balance = previous_sales_total
             
             # Check if there's a manual override for this patient's old balance
             old_balance = balance_overrides.get(patient_id_str, calculated_balance)
