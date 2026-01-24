@@ -1933,6 +1933,71 @@ def get_overheads(month, year):
         return jsonify({"error": str(e)}), 500
 
 
+@app.route('/api/overheads/annual/<int:year>', methods=['GET'])
+@role_required(['Admin'])
+def get_overheads_annual(year):
+    """
+    Aggregate total income, expense, and profit for a full year,
+    including canteen sales from canteen_sales collection.
+    """
+    if not check_db(): return jsonify({"error": "Database error"}), 500
+    try:
+        # Aggregate canteen sales for the entire year
+        start_date = datetime(year, 1, 1)
+        end_date = datetime(year + 1, 1, 1)
+        
+        canteen_aggregation = mongo.db.canteen_sales.aggregate([
+            {
+                '$match': {
+                    'date': {
+                        '$gte': start_date,
+                        '$lt': end_date
+                    }
+                }
+            },
+            {
+                '$group': {
+                    '_id': None,
+                    'total_canteen': {'$sum': '$amount'}
+                }
+            }
+        ])
+        
+        canteen_result = list(canteen_aggregation)
+        total_canteen = canteen_result[0]['total_canteen'] if canteen_result else 0
+        
+        # Aggregate overhead entries
+        entries = list(mongo.db.overheads.find({'year': year}))
+
+        total_income = 0.0
+        total_other_expense = 0.0
+
+        for entry in entries:
+            income = float(entry.get('income', 0))
+            # Sum kitchen, others, pay_advance (excluding canteen_auto to avoid double-counting)
+            kitchen = float(entry.get('kitchen', 0))
+            others = float(entry.get('others', 0))
+            pay_advance = float(entry.get('pay_advance', 0))
+            
+            total_income += income
+            total_other_expense += (kitchen + others + pay_advance)
+
+        # Total expense = other expenses + canteen sales
+        total_expense = total_other_expense + total_canteen
+        profit = total_income - total_expense
+
+        return jsonify({
+            'year': year,
+            'total_income': total_income,
+            'total_expense': total_expense,
+            'total_canteen': total_canteen,
+            'profit': profit
+        })
+    except Exception as e:
+        print(f"Get Annual Overheads Error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route('/api/overheads/entry', methods=['POST'])
 @role_required(['Admin'])
 def save_overhead_entry():

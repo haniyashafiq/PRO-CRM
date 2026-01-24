@@ -3811,6 +3811,9 @@
           const daysInMonth = data.days_in_month;
 
           renderMonthlyOverheadsTable(month, year, daysInMonth);
+
+          // Also refresh annual profit card for the selected year
+          await loadAnnualOverheadsProfit(year);
         } catch (e) {
           console.error('[MONTHLY OVERHEADS] Error loading data:', e);
           alert('Failed to load monthly overheads data. Please try again.');
@@ -3848,6 +3851,7 @@
                 <th class="px-3 py-3 text-center text-xs font-bold uppercase border border-emerald-700">Pay/Advance</th>
                 <th class="px-3 py-3 text-center text-xs font-bold uppercase border border-emerald-700 bg-emerald-700">Total Expense</th>
                 <th class="px-3 py-3 text-center text-xs font-bold uppercase border border-emerald-700">Income</th>
+                <th class="px-3 py-3 text-center text-xs font-bold uppercase border border-emerald-700">Profit Per Day</th>
                 <th class="px-1 py-3 text-center text-xs font-bold uppercase border border-emerald-700 w-20">Employee <span class="text-emerald-200 font-normal text-[10px]">(Optional)</span></th>
               </tr>
             </thead>
@@ -3861,6 +3865,7 @@
         let totalPayAdvance = 0;
         let totalExpense = 0;
         let totalIncome = 0;
+        let totalProfit = 0;
 
         // Generate rows for each day
         for (let day = 1; day <= daysInMonth; day++) {
@@ -3877,6 +3882,7 @@
           const employeeNames = entry.employee_names || '';
 
           const rowExpense = kitchen + canteenAuto + others + payAdvance;
+          const dayProfit = income - rowExpense;
 
           totalKitchen += kitchen;
           totalCanteen += canteenAuto;
@@ -3884,6 +3890,7 @@
           totalPayAdvance += payAdvance;
           totalExpense += rowExpense;
           totalIncome += income;
+          totalProfit += dayProfit;
 
           tableHTML += `
             <tr class="hover:bg-emerald-50 border-b">
@@ -3915,6 +3922,7 @@
                   data-date="${dateStr}"
                   onblur="saveMonthlyOverheadCell(this)"
                   onfocus="selectAllText(this)">${income || ''}</td>
+                            <td class="px-3 py-2 text-right border border-gray-200 font-bold ${dayProfit >= 0 ? 'text-green-700 bg-green-50' : 'text-red-700 bg-red-50'}">${dayProfit ? formatCurrency(dayProfit) : ''}</td>
               <td class="px-1 py-2 border border-gray-200 cursor-pointer hover:bg-yellow-50 relative text-gray-600 text-xs w-20" 
                   data-field="employee_names"
                   data-date="${dateStr}"
@@ -3934,6 +3942,7 @@
               <td class="px-3 py-3 text-right border border-emerald-900 text-white" style="background-color: #064e3b !important; color: white !important;">${formatCurrency(totalPayAdvance)}</td>
               <td class="px-3 py-3 text-right border border-emerald-900 bg-emerald-900 text-white" style="background-color: #064e3b !important; color: white !important;">${formatCurrency(totalExpense)}</td>
               <td class="px-3 py-3 text-right border border-emerald-900 text-white" style="background-color: #064e3b !important; color: white !important;">${formatCurrency(totalIncome)}</td>
+                            <td class="px-3 py-3 text-right border border-emerald-900 text-white font-extrabold" style="background-color: #064e3b !important; color: white !important;">${formatCurrency(totalProfit)}</td>
               <td class="px-1 py-3 border border-emerald-900 w-20 text-white" style="background-color: #064e3b !important; color: white !important;"></td>
             </tr>
           </tbody>
@@ -3954,6 +3963,47 @@
             <div class="text-3xl font-extrabold">${formatCurrency(profit)}</div>
           </div>
         `;
+      }
+
+      // Load and display annual profit card for the selected year
+      async function loadAnnualOverheadsProfit(year) {
+        const annualDisplay = document.getElementById('monthly-overheads-annual-profit-display');
+        if (!annualDisplay) return;
+
+        // Show loading placeholder
+        annualDisplay.innerHTML = `
+          <div class="border-2 border-gray-200 px-6 py-3 rounded-xl shadow-sm text-right bg-gray-50">
+            <div class="text-xs font-bold uppercase tracking-wide mb-1 text-gray-500">${year} Profit</div>
+            <div class="text-lg font-semibold text-gray-500">Loading...</div>
+          </div>
+        `;
+
+        try {
+          const res = await fetch(`/api/overheads/annual/${year}`);
+          if (!res.ok) throw new Error(`API returned ${res.status}`);
+
+          const data = await res.json();
+          const profit = data.profit || 0;
+          const profitClass =
+            profit >= 0
+              ? 'text-green-700 bg-green-50 border-green-200'
+              : 'text-white bg-red-500 border-red-600';
+
+          annualDisplay.innerHTML = `
+            <div class="border-2 ${profitClass} px-6 py-3 rounded-xl shadow-lg">
+              <div class="text-xs font-bold uppercase tracking-wide mb-1">${year} Profit</div>
+              <div class="text-3xl font-extrabold">${formatCurrency(profit)}</div>
+            </div>
+          `;
+        } catch (e) {
+          console.error('[MONTHLY OVERHEADS] Error loading annual profit:', e);
+          annualDisplay.innerHTML = `
+            <div class="border-2 border-red-200 px-6 py-3 rounded-xl shadow-sm bg-red-50 text-red-700">
+              <div class="text-xs font-bold uppercase tracking-wide mb-1">${year} Profit</div>
+              <div class="text-sm">Failed to load</div>
+            </div>
+          `;
+        }
       }
 
       window.selectAllText = function (element) {
@@ -3978,7 +4028,7 @@
         const kitchen = parseFloat(cells[2].textContent.trim()) || 0;
         const others = parseFloat(cells[4].textContent.trim()) || 0;
         const payAdvance = parseFloat(cells[5].textContent.trim()) || 0;
-        const employeeNames = cells[8].textContent.trim();
+        const employeeNames = cells[9].textContent.trim();
         const income = parseFloat(cells[7].textContent.trim()) || 0;
         const canteenAuto = monthlyCanteenDailyData[date] || 0;
 
@@ -8096,9 +8146,12 @@
                 <i class="fas fa-sync-alt mr-2"></i> Load
               </button>
             </div>
-            <div class="ml-auto mt-5">
+            <div class="ml-auto mt-5 flex flex-col md:flex-row gap-3">
               <div id="monthly-overheads-profit-display" class="text-right">
                 <!-- Profit display will be inserted here -->
+              </div>
+              <div id="monthly-overheads-annual-profit-display" class="text-right">
+                <!-- Annual profit display will be inserted here -->
               </div>
             </div>
           </div>
