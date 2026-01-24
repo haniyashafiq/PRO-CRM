@@ -1724,8 +1724,13 @@
         if (viewId === 'attendance-view') renderAttendanceView();
         if (viewId === 'daily-report-view') {
           const datePicker = document.getElementById('report-date-picker');
-          if (!datePicker.value) {
-            datePicker.value = new Date().toISOString().split('T')[0];
+          if (datePicker && !datePicker.value) {
+            // Only set date on first load, don't auto-update after that
+            const today = new Date();
+            const localIso = new Date(today.getTime() - today.getTimezoneOffset() * 60000)
+              .toISOString()
+              .split('T')[0];
+            datePicker.value = localIso;
           }
           loadDailyReport();
         }
@@ -2259,15 +2264,14 @@
         // --- NEW: Load Daily Report ---
         const datePicker = document.getElementById('report-date-picker');
         if (datePicker && !datePicker.value) {
-          // Set default to today if empty
+          // Set default to today only on very first load
           const today = new Date();
-          // Adjust for timezone offset to prevent "yesterday" bug
           const localIso = new Date(today.getTime() - today.getTimezoneOffset() * 60000)
             .toISOString()
             .split('T')[0];
           datePicker.value = localIso;
         }
-        // Call the loader
+        // Load report with current date picker value (doesn't auto-update to today)
         await loadDailyReport();
       }
 
@@ -2483,7 +2487,7 @@
           const emptyMessage = normalizedSearch
             ? 'No patients match your search.'
             : 'No records found.';
-          const colspanCount = isAdmin ? 12 : 9;
+          const colspanCount = isAdmin ? 13 : 10;
           tbody.innerHTML = `
             <tr>
               <td colspan="${colspanCount}" class="p-6 text-center text-gray-400">${emptyMessage}</td>
@@ -2547,7 +2551,8 @@
           const receivedValue =
             parseInt(String(p.receivedAmount || '0').replace(/,/g, ''), 10) || 0;
           const receivedAmount = formatCurrency(receivedValue);
-          const pendingValue = feeValue - receivedValue;
+          const canteenSpentValue = p.canteenSpent || 0;
+          const pendingValue = feeValue - receivedValue + canteenSpentValue;
           const pendingAmount = formatCurrency(pendingValue);
           const areaDisplay = p.area || p.address || '-';
           const drugDisplay = p.drug || '-';
@@ -2593,57 +2598,52 @@
             monthNames[admissionDate.getMonth()]
           } ${admissionDate.getDate()} ${admissionDate.getFullYear()}`;
 
-          // Format days progress as "X months and Y days of Z months"
-          const totalMonths = Math.floor(daysElapsed / 30);
-          const remainingDays = daysElapsed % 30;
-          const targetMonths = 3; // 90 days = 3 months
+          // Format days progress as "X/90" and months as "X months"
+          const targetDays = 90;
+          const daysProgress = `${daysElapsed}/${targetDays}`;
 
-          let daysProgress;
-          if (totalMonths === 0) {
-            daysProgress = `${remainingDays} days of ${targetMonths} months`;
-          } else if (remainingDays === 0) {
-            daysProgress = `${totalMonths} months of ${targetMonths} months`;
-          } else {
-            daysProgress = `${totalMonths} month${totalMonths > 1 ? 's' : ''} and ${remainingDays} day${remainingDays > 1 ? 's' : ''} of ${targetMonths} months`;
-          }
+          const totalMonths = Math.floor(daysElapsed / 30);
+          const monthsProgress = totalMonths === 1 ? '1 month' : `${totalMonths} months`;
 
           if (isAdmin) {
-            tr.innerHTML = `<td class="px-3 py-2 font-medium text-gray-700 whitespace-nowrap text-xs">${serialNo}</td>
-                            <td class="px-3 py-2 font-medium whitespace-nowrap">${
+            tr.innerHTML = `<td class="px-2 py-2 font-medium text-gray-700 whitespace-nowrap text-xs">${serialNo}</td>
+                            <td class="px-2 py-2 font-medium whitespace-nowrap">${
                               p.name || '-'
                             }</td>
-                            <td class="px-3 py-2 text-gray-600 whitespace-nowrap">${
+                            <td class="px-2 py-2 text-gray-600 whitespace-nowrap">${
                               p.fatherName || '-'
                             }</td>
-                            <td class="px-3 py-2 text-gray-600 whitespace-nowrap">${
+                            <td class="px-2 py-2 text-gray-600 whitespace-nowrap text-xs">${formattedAdmissionDate}</td>
+                            <td class="px-2 py-2 text-gray-600 whitespace-nowrap">${
                               p.contactNo || '-'
                             }</td>
-                            <td class="px-3 py-2 text-gray-600 whitespace-nowrap">${areaDisplay}</td>
-                            <td class="px-3 py-2 text-gray-600 whitespace-nowrap">${drugDisplay}</td>
-                            <td class="px-3 py-2 font-semibold text-green-700 whitespace-nowrap">${fee}</td>
-                            <td class="px-3 py-2 text-gray-600 whitespace-nowrap text-xs">${formattedAdmissionDate}</td>
-                            <td class="px-3 py-2 text-center text-gray-700 font-medium whitespace-nowrap text-xs">${daysProgress}</td>
-                            <td class="px-3 py-2 font-semibold text-blue-700 whitespace-nowrap">${receivedAmount}</td>
-                            <td class="px-3 py-2 font-semibold ${
+                            <td class="px-2 py-2 text-gray-600 whitespace-nowrap">${areaDisplay}</td>
+                            <td class="px-2 py-2 text-gray-600 whitespace-nowrap">${drugDisplay}</td>
+                            <td class="px-2 py-2 font-semibold text-green-700 whitespace-nowrap">${fee}</td>
+                            <td class="px-2 py-2 text-center text-gray-700 font-medium whitespace-nowrap text-xs">${daysProgress}</td>
+                            <td class="px-2 py-2 text-center text-gray-700 font-medium whitespace-nowrap text-xs">${monthsProgress}</td>
+                            <td class="px-2 py-2 font-semibold text-blue-700 whitespace-nowrap">${receivedAmount}</td>
+                            <td class="px-2 py-2 font-semibold ${
                               pendingValue > 0 ? 'text-red-600' : 'text-green-700'
                             } whitespace-nowrap">${pendingAmount}</td>
-                            <td class="px-3 py-2 text-right">${actionControls}</td>`;
+                            <td class="px-2 py-2 text-right">${actionControls}</td>`;
           } else {
-            tr.innerHTML = `<td class="px-3 py-2 font-medium text-gray-700 whitespace-nowrap text-xs">${serialNo}</td>
-                            <td class="px-3 py-2 font-medium whitespace-nowrap">${
+            tr.innerHTML = `<td class="px-2 py-2 font-medium text-gray-700 whitespace-nowrap text-xs">${serialNo}</td>
+                            <td class="px-2 py-2 font-medium whitespace-nowrap">${
                               p.name || '-'
                             }</td>
-                            <td class="px-3 py-2 text-gray-600 whitespace-nowrap">${
+                            <td class="px-2 py-2 text-gray-600 whitespace-nowrap">${
                               p.fatherName || '-'
                             }</td>
-                            <td class="px-3 py-2 text-gray-600 whitespace-nowrap">${
+                            <td class="px-2 py-2 text-gray-600 whitespace-nowrap text-xs">${formattedAdmissionDate}</td>
+                            <td class="px-2 py-2 text-gray-600 whitespace-nowrap">${
                               p.contactNo || '-'
                             }</td>
-                            <td class="px-3 py-2 text-gray-600 whitespace-nowrap">${areaDisplay}</td>
-                            <td class="px-3 py-2 text-gray-600 whitespace-nowrap">${drugDisplay}</td>
-                            <td class="px-3 py-2 text-gray-600 whitespace-nowrap text-xs">${formattedAdmissionDate}</td>
-                            <td class="px-3 py-2 text-center text-gray-700 font-medium whitespace-nowrap text-xs">${daysProgress}</td>
-                            <td class="px-3 py-2 text-right">${actionControls}</td>`;
+                            <td class="px-2 py-2 text-gray-600 whitespace-nowrap">${areaDisplay}</td>
+                            <td class="px-2 py-2 text-gray-600 whitespace-nowrap">${drugDisplay}</td>
+                            <td class="px-2 py-2 text-center text-gray-700 font-medium whitespace-nowrap text-xs">${daysProgress}</td>
+                            <td class="px-2 py-2 text-center text-gray-700 font-medium whitespace-nowrap text-xs">${monthsProgress}</td>
+                            <td class="px-2 py-2 text-right">${actionControls}</td>`;
           }
           tbody.appendChild(tr);
         });
@@ -3812,6 +3812,9 @@
           const daysInMonth = data.days_in_month;
 
           renderMonthlyOverheadsTable(month, year, daysInMonth);
+
+          // Also refresh annual profit card for the selected year
+          await loadAnnualOverheadsProfit(year);
         } catch (e) {
           console.error('[MONTHLY OVERHEADS] Error loading data:', e);
           alert('Failed to load monthly overheads data. Please try again.');
@@ -3847,9 +3850,10 @@
                 <th class="px-3 py-3 text-center text-xs font-bold uppercase border border-emerald-700">Canteen</th>
                 <th class="px-3 py-3 text-center text-xs font-bold uppercase border border-emerald-700">Others</th>
                 <th class="px-3 py-3 text-center text-xs font-bold uppercase border border-emerald-700">Pay/Advance</th>
-                <th class="px-3 py-3 text-center text-xs font-bold uppercase border border-emerald-700">Employee</th>
                 <th class="px-3 py-3 text-center text-xs font-bold uppercase border border-emerald-700 bg-emerald-700">Total Expense</th>
                 <th class="px-3 py-3 text-center text-xs font-bold uppercase border border-emerald-700">Income</th>
+                <th class="px-3 py-3 text-center text-xs font-bold uppercase border border-emerald-700">Profit Per Day</th>
+                <th class="px-1 py-3 text-center text-xs font-bold uppercase border border-emerald-700 w-20">Employee <span class="text-emerald-200 font-normal text-[10px]">(Optional)</span></th>
               </tr>
             </thead>
             <tbody class="bg-white">
@@ -3862,6 +3866,7 @@
         let totalPayAdvance = 0;
         let totalExpense = 0;
         let totalIncome = 0;
+        let totalProfit = 0;
 
         // Generate rows for each day
         for (let day = 1; day <= daysInMonth; day++) {
@@ -3878,6 +3883,7 @@
           const employeeNames = entry.employee_names || '';
 
           const rowExpense = kitchen + canteenAuto + others + payAdvance;
+          const dayProfit = income - rowExpense;
 
           totalKitchen += kitchen;
           totalCanteen += canteenAuto;
@@ -3885,6 +3891,7 @@
           totalPayAdvance += payAdvance;
           totalExpense += rowExpense;
           totalIncome += income;
+          totalProfit += dayProfit;
 
           tableHTML += `
             <tr class="hover:bg-emerald-50 border-b">
@@ -3909,10 +3916,6 @@
                   data-date="${dateStr}"
                   onblur="saveMonthlyOverheadCell(this)"
                   onfocus="selectAllText(this)">${payAdvance || ''}</td>
-              <td class="px-3 py-2 border border-gray-200 cursor-pointer hover:bg-yellow-50 relative" 
-                  data-field="employee_names"
-                  data-date="${dateStr}"
-                  onclick="openMonthlyEmployeeDropdown(this)">${employeeNames}</td>
               <td class="px-3 py-2 text-right border border-gray-200 bg-emerald-100 font-bold text-emerald-900">${rowExpense ? formatCurrency(rowExpense) : ''}</td>
               <td class="px-3 py-2 text-right border border-gray-200 cursor-pointer hover:bg-yellow-50" 
                   contenteditable="true"
@@ -3920,6 +3923,11 @@
                   data-date="${dateStr}"
                   onblur="saveMonthlyOverheadCell(this)"
                   onfocus="selectAllText(this)">${income || ''}</td>
+                            <td class="px-3 py-2 text-right border border-gray-200 font-bold ${dayProfit >= 0 ? 'text-green-700 bg-green-50' : 'text-red-700 bg-red-50'}">${dayProfit ? formatCurrency(dayProfit) : ''}</td>
+              <td class="px-1 py-2 border border-gray-200 cursor-pointer hover:bg-yellow-50 relative text-gray-600 text-xs w-20" 
+                  data-field="employee_names"
+                  data-date="${dateStr}"
+                  onclick="openMonthlyEmployeeDropdown(this)">${employeeNames || '<span class="text-gray-400 italic text-xs">Optional</span>'}</td>
             </tr>
           `;
         }
@@ -3927,15 +3935,16 @@
         // Totals row
         const profit = totalIncome - totalExpense;
         tableHTML += `
-            <tr class="bg-emerald-700 text-white font-bold">
-              <td colspan="2" class="px-3 py-3 text-center border border-emerald-800 uppercase">Total</td>
-              <td class="px-3 py-3 text-right border border-emerald-800">${formatCurrency(totalKitchen)}</td>
-              <td class="px-3 py-3 text-right border border-emerald-800">${formatCurrency(totalCanteen)}</td>
-              <td class="px-3 py-3 text-right border border-emerald-800">${formatCurrency(totalOthers)}</td>
-              <td class="px-3 py-3 text-right border border-emerald-800">${formatCurrency(totalPayAdvance)}</td>
-              <td class="px-3 py-3 border border-emerald-800"></td>
-              <td class="px-3 py-3 text-right border border-emerald-800 bg-emerald-800">${formatCurrency(totalExpense)}</td>
-              <td class="px-3 py-3 text-right border border-emerald-800">${formatCurrency(totalIncome)}</td>
+            <tr class="bg-emerald-800 text-white font-bold" style="background-color: #064e3b !important;">
+              <td colspan="2" class="px-3 py-3 text-center border border-emerald-900 uppercase text-white" style="background-color: #064e3b !important; color: white !important;">Total</td>
+              <td class="px-3 py-3 text-right border border-emerald-900 text-white" style="background-color: #064e3b !important; color: white !important;">${formatCurrency(totalKitchen)}</td>
+              <td class="px-3 py-3 text-right border border-emerald-900 text-white" style="background-color: #064e3b !important; color: white !important;">${formatCurrency(totalCanteen)}</td>
+              <td class="px-3 py-3 text-right border border-emerald-900 text-white" style="background-color: #064e3b !important; color: white !important;">${formatCurrency(totalOthers)}</td>
+              <td class="px-3 py-3 text-right border border-emerald-900 text-white" style="background-color: #064e3b !important; color: white !important;">${formatCurrency(totalPayAdvance)}</td>
+              <td class="px-3 py-3 text-right border border-emerald-900 bg-emerald-900 text-white" style="background-color: #064e3b !important; color: white !important;">${formatCurrency(totalExpense)}</td>
+              <td class="px-3 py-3 text-right border border-emerald-900 text-white" style="background-color: #064e3b !important; color: white !important;">${formatCurrency(totalIncome)}</td>
+                            <td class="px-3 py-3 text-right border border-emerald-900 text-white font-extrabold" style="background-color: #064e3b !important; color: white !important;">${formatCurrency(totalProfit)}</td>
+              <td class="px-1 py-3 border border-emerald-900 w-20 text-white" style="background-color: #064e3b !important; color: white !important;"></td>
             </tr>
           </tbody>
         </table>
@@ -3955,6 +3964,47 @@
             <div class="text-3xl font-extrabold">${formatCurrency(profit)}</div>
           </div>
         `;
+      }
+
+      // Load and display annual profit card for the selected year
+      async function loadAnnualOverheadsProfit(year) {
+        const annualDisplay = document.getElementById('monthly-overheads-annual-profit-display');
+        if (!annualDisplay) return;
+
+        // Show loading placeholder
+        annualDisplay.innerHTML = `
+          <div class="border-2 border-gray-200 px-6 py-3 rounded-xl shadow-sm text-right bg-gray-50">
+            <div class="text-xs font-bold uppercase tracking-wide mb-1 text-gray-500">${year} Profit</div>
+            <div class="text-lg font-semibold text-gray-500">Loading...</div>
+          </div>
+        `;
+
+        try {
+          const res = await fetch(`/api/overheads/annual/${year}`);
+          if (!res.ok) throw new Error(`API returned ${res.status}`);
+
+          const data = await res.json();
+          const profit = data.profit || 0;
+          const profitClass =
+            profit >= 0
+              ? 'text-green-700 bg-green-50 border-green-200'
+              : 'text-white bg-red-500 border-red-600';
+
+          annualDisplay.innerHTML = `
+            <div class="border-2 ${profitClass} px-6 py-3 rounded-xl shadow-lg">
+              <div class="text-xs font-bold uppercase tracking-wide mb-1">${year} Profit</div>
+              <div class="text-3xl font-extrabold">${formatCurrency(profit)}</div>
+            </div>
+          `;
+        } catch (e) {
+          console.error('[MONTHLY OVERHEADS] Error loading annual profit:', e);
+          annualDisplay.innerHTML = `
+            <div class="border-2 border-red-200 px-6 py-3 rounded-xl shadow-sm bg-red-50 text-red-700">
+              <div class="text-xs font-bold uppercase tracking-wide mb-1">${year} Profit</div>
+              <div class="text-sm">Failed to load</div>
+            </div>
+          `;
+        }
       }
 
       window.selectAllText = function (element) {
@@ -3979,8 +4029,8 @@
         const kitchen = parseFloat(cells[2].textContent.trim()) || 0;
         const others = parseFloat(cells[4].textContent.trim()) || 0;
         const payAdvance = parseFloat(cells[5].textContent.trim()) || 0;
-        const employeeNames = cells[6].textContent.trim();
-        const income = parseFloat(cells[8].textContent.trim()) || 0;
+        const employeeNames = cells[9].textContent.trim();
+        const income = parseFloat(cells[7].textContent.trim()) || 0;
         const canteenAuto = monthlyCanteenDailyData[date] || 0;
 
         try {
@@ -4028,7 +4078,8 @@
         const dropdown = document.createElement('div');
         dropdown.className = 'bg-white rounded-lg shadow-xl p-4 w-96 max-h-96 overflow-y-auto';
         dropdown.innerHTML = `
-          <h3 class="font-bold text-gray-800 mb-3 text-lg">Select Employee(s)</h3>
+          <h3 class="font-bold text-gray-800 mb-2 text-lg">Select Employee(s)</h3>
+          <p class="text-xs text-gray-500 mb-3 italic">This field is optional - leave empty if not applicable</p>
           <input type="text" 
                  id="monthly-employee-search" 
                  placeholder="Search employees..." 
@@ -4036,6 +4087,7 @@
           <div id="monthly-employee-list" class="space-y-1"></div>
           <div class="mt-4 flex gap-2">
             <button onclick="saveMonthlyEmployeeSelection('${date}')" class="flex-1 bg-emerald-600 text-white px-4 py-2 rounded hover:bg-emerald-700">Save</button>
+            <button onclick="clearMonthlyEmployeeSelection('${date}')" class="flex-1 bg-orange-500 text-white px-4 py-2 rounded hover:bg-orange-600">Clear</button>
             <button onclick="closeMonthlyEmployeeDropdown()" class="flex-1 bg-gray-300 text-gray-700 px-4 py-2 rounded hover:bg-gray-400">Cancel</button>
           </div>
         `;
@@ -4104,7 +4156,7 @@
           const kitchen = parseFloat(cells[2].textContent.trim()) || 0;
           const others = parseFloat(cells[4].textContent.trim()) || 0;
           const payAdvance = parseFloat(cells[5].textContent.trim()) || 0;
-          const income = parseFloat(cells[8].textContent.trim()) || 0;
+          const income = parseFloat(cells[7].textContent.trim()) || 0;
           const canteenAuto = monthlyCanteenDailyData[date] || 0;
 
           try {
@@ -4139,6 +4191,53 @@
       window.closeMonthlyEmployeeDropdown = function () {
         const overlay = document.querySelector('.employee-dropdown-overlay');
         if (overlay) overlay.remove();
+      };
+
+      window.clearMonthlyEmployeeSelection = async function (date) {
+        const [year, month, day] = date.split('-').map(Number);
+
+        // Find the cell for this date
+        const cell = document.querySelector(`td[data-field="employee_names"][data-date="${date}"]`);
+        if (cell) {
+          cell.innerHTML = '<span class="text-gray-400 italic text-xs">Optional</span>';
+
+          // Get current row values
+          const row = cell.parentElement;
+          const cells = Array.from(row.querySelectorAll('td'));
+
+          const kitchen = parseFloat(cells[2].textContent.trim()) || 0;
+          const others = parseFloat(cells[4].textContent.trim()) || 0;
+          const payAdvance = parseFloat(cells[5].textContent.trim()) || 0;
+          const income = parseFloat(cells[7].textContent.trim()) || 0;
+          const canteenAuto = monthlyCanteenDailyData[date] || 0;
+
+          try {
+            const res = await fetch('/api/overheads/entry', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                date,
+                month,
+                year,
+                kitchen,
+                canteen_auto: canteenAuto,
+                others,
+                pay_advance: payAdvance,
+                employee_names: '',
+                income,
+              }),
+            });
+
+            if (res.ok) {
+              closeMonthlyEmployeeDropdown();
+            } else {
+              alert('Failed to clear employee selection');
+            }
+          } catch (e) {
+            console.error('Error clearing employee selection:', e);
+            alert('Failed to clear employee selection');
+          }
+        }
       };
 
       window.refreshOverheadsCanteenColumn = async function () {
@@ -5426,12 +5525,30 @@
         renderSplitTable('night', NIGHT_CONFIG, activePatients, reportMap);
       }
 
-      // Toggle Status: Empty -> Done (Green) -> Not Done (Red) -> Complaint (Yellow) -> Empty
-      window.cycleReportStatus = async function (btnElement, patientId, timeSlot, currentStatus) {
+      // Toggle Status: Day -> Empty -> Done -> Not Done -> Complaint -> Empty
+      // Night -> Empty -> Done -> Not Done -> Med -> WC -> Empty
+      window.cycleReportStatus = async function (
+        btnElement,
+        patientId,
+        timeSlot,
+        currentStatus,
+        reportType
+      ) {
         let nextStatus = 'done';
-        if (currentStatus === 'done') nextStatus = 'not_done';
-        else if (currentStatus === 'not_done') nextStatus = 'complaint';
-        else if (currentStatus === 'complaint') nextStatus = '';
+
+        // Determine which cycle to use based on report type
+        if (reportType === 'night') {
+          // Night report cycle: Empty -> Done -> Not Done -> Med -> W -> Empty
+          if (currentStatus === 'done') nextStatus = 'not_done';
+          else if (currentStatus === 'not_done') nextStatus = 'med';
+          else if (currentStatus === 'med') nextStatus = 'wc';
+          else if (currentStatus === 'wc') nextStatus = '';
+        } else {
+          // Day report cycle: Empty -> Done -> Not Done -> Complaint -> Empty
+          if (currentStatus === 'done') nextStatus = 'not_done';
+          else if (currentStatus === 'not_done') nextStatus = 'complaint';
+          else if (currentStatus === 'complaint') nextStatus = '';
+        }
 
         // Optimistic UI Update
         btnElement.className = `w-full h-6 rounded flex items-center justify-center transition-all text-xs ${getStatusClass(
@@ -5442,7 +5559,7 @@
         btnElement.setAttribute('aria-label', statusLabelMap[nextStatus] || 'No Status');
         btnElement.setAttribute(
           'onclick',
-          `cycleReportStatus(this, '${patientId}', '${timeSlot}', '${nextStatus}')`
+          `cycleReportStatus(this, '${patientId}', '${timeSlot}', '${nextStatus}', '${reportType}')`
         );
 
         // Send to Backend
@@ -5469,6 +5586,8 @@
         done: 'Done',
         not_done: 'Not Done',
         complaint: 'Emergency / Complaint',
+        med: 'Medicine',
+        wc: 'Washroom',
         '': 'No Status',
         null: 'No Status',
         undefined: 'No Status',
@@ -5478,6 +5597,8 @@
         done: '✓',
         not_done: '✕',
         complaint: '!',
+        med: 'Med',
+        wc: 'WC',
       };
 
       function renderSplitTable(type, columns, patients, reportMap) {
@@ -5557,7 +5678,7 @@
 
             rowHtml += `
             <td class="p-0.5 border text-center align-middle">
-              <button onclick="cycleReportStatus(this, '${pId}', '${col.key}', '${status || ''}')" 
+              <button onclick="cycleReportStatus(this, '${pId}', '${col.key}', '${status || ''}', '${type}')" 
                       class="w-full h-6 rounded flex items-center justify-center transition-all text-xs ${cellClass}"
                       data-status="${status || ''}"
                       data-patient="${pId}"
@@ -5870,6 +5991,8 @@
         if (status === 'not_done') return 'bg-red-100 hover:bg-red-200 border border-red-300';
         if (status === 'complaint')
           return 'bg-yellow-100 hover:bg-yellow-200 border border-yellow-300';
+        if (status === 'med') return 'bg-blue-100 hover:bg-blue-200 border border-blue-300';
+        if (status === 'wc') return 'bg-purple-100 hover:bg-purple-200 border border-purple-300';
         return 'bg-gray-50 hover:bg-gray-100 border border-gray-100';
       }
 
@@ -5878,6 +6001,8 @@
         if (status === 'not_done') return '<i class="fas fa-times text-red-600 text-sm"></i>';
         if (status === 'complaint')
           return '<i class="fas fa-exclamation text-yellow-600 text-sm"></i>';
+        if (status === 'med') return '<span class="text-blue-600 text-xs font-bold">Med</span>';
+        if (status === 'wc') return '<span class="text-purple-600 text-xs font-bold">WC</span>';
         return '<span class="text-gray-200 text-xs">•</span>';
       }
 
@@ -7057,43 +7182,46 @@
                 <th class="px-3 py-2 text-left whitespace-nowrap font-semibold text-xs">
                   Serial No
                 </th>
-                <th class="px-3 py-2 text-left whitespace-nowrap font-semibold text-xs">Name</th>
-                <th class="px-3 py-2 text-left whitespace-nowrap font-semibold text-xs">
+                <th class="px-2 py-2 text-left whitespace-nowrap font-semibold text-xs">Name</th>
+                <th class="px-2 py-2 text-left whitespace-nowrap font-semibold text-xs">
                   Father Name
+                </th>
+                <th class="px-2 py-2 text-left whitespace-nowrap font-semibold text-xs">
+                  Admission Date
                 </th>
                 <th
                   id="header-contact"
-                  class="px-3 py-2 text-left whitespace-nowrap font-semibold text-xs"
+                  class="px-2 py-2 text-left whitespace-nowrap font-semibold text-xs"
                 >
                   Contact
                 </th>
-                <th class="px-3 py-2 text-left whitespace-nowrap font-semibold text-xs">Area</th>
-                <th class="px-3 py-2 text-left whitespace-nowrap font-semibold text-xs">Drug</th>
+                <th class="px-2 py-2 text-left whitespace-nowrap font-semibold text-xs">Area</th>
+                <th class="px-2 py-2 text-left whitespace-nowrap font-semibold text-xs">Drug</th>
                 <th
                   id="header-fee"
-                  class="px-3 py-2 text-left whitespace-nowrap font-semibold text-xs admin-only-column"
+                  class="px-2 py-2 text-left whitespace-nowrap font-semibold text-xs admin-only-column"
                 >
                   Fee
                 </th>
-                <th class="px-3 py-2 text-left whitespace-nowrap font-semibold text-xs">
-                  Admission Date
-                </th>
-                <th class="px-3 py-2 text-center whitespace-nowrap font-semibold text-xs">
+                <th class="px-2 py-2 text-center whitespace-nowrap font-semibold text-xs">
                   Days Done
+                </th>
+                <th class="px-2 py-2 text-center whitespace-nowrap font-semibold text-xs">
+                  Months Done
                 </th>
                 <th
                   id="header-received"
-                  class="px-3 py-2 text-left whitespace-nowrap font-semibold text-xs admin-only-column"
+                  class="px-2 py-2 text-left whitespace-nowrap font-semibold text-xs admin-only-column"
                 >
                   Received Amt
                 </th>
                 <th
                   id="header-pending"
-                  class="px-3 py-2 text-left whitespace-nowrap font-semibold text-xs admin-only-column"
+                  class="px-2 py-2 text-left whitespace-nowrap font-semibold text-xs admin-only-column"
                 >
                   Pending Amt
                 </th>
-                <th class="px-3 py-2 text-right whitespace-nowrap font-semibold text-xs">
+                <th class="px-2 py-2 text-right whitespace-nowrap font-semibold text-xs">
                   Actions
                 </th>
               </tr>
@@ -8019,9 +8147,12 @@
                 <i class="fas fa-sync-alt mr-2"></i> Load
               </button>
             </div>
-            <div class="ml-auto mt-5">
+            <div class="ml-auto mt-5 flex flex-col md:flex-row gap-3">
               <div id="monthly-overheads-profit-display" class="text-right">
                 <!-- Profit display will be inserted here -->
+              </div>
+              <div id="monthly-overheads-annual-profit-display" class="text-right">
+                <!-- Annual profit display will be inserted here -->
               </div>
             </div>
           </div>
@@ -9596,12 +9727,19 @@
 
           for (let d = 1; d <= daysInMonth; d++) {
             const mark = attendance[emp.id]?.[String(d)] || '';
-            const color = mark === 'P' ? 'bg-green-200' : mark === 'A' ? 'bg-red-200' : '';
+            const color =
+              mark === 'P'
+                ? 'bg-green-200'
+                : mark === 'A'
+                  ? 'bg-red-200'
+                  : mark === 'H'
+                    ? 'bg-yellow-200'
+                    : '';
 
             rowHTML += `
         <td class="border text-center cursor-pointer ${color}"
             data-emp="${emp.id}" data-day="${d}">
-          ${mark === 'P' ? '✔️' : mark === 'A' ? '❌' : ''}
+          ${mark === 'P' ? '✔️' : mark === 'A' ? '❌' : mark === 'H' ? '🕐' : ''}
         </td>
       `;
           }
@@ -9617,11 +9755,12 @@
             const day = cell.dataset.day;
 
             let current = cell.textContent.trim();
-            let mark = current === '' ? 'P' : current === '✔️' ? 'A' : '';
+            let mark = current === '' ? 'P' : current === '✔️' ? 'A' : current === '❌' ? 'H' : '';
 
-            cell.textContent = mark === 'P' ? '✔️' : mark === 'A' ? '❌' : '';
+            cell.textContent = mark === 'P' ? '✔️' : mark === 'A' ? '❌' : mark === 'H' ? '🕐' : '';
             cell.classList.toggle('bg-green-200', mark === 'P');
             cell.classList.toggle('bg-red-200', mark === 'A');
+            cell.classList.toggle('bg-yellow-200', mark === 'H');
 
             await fetch('/api/attendance', {
               method: 'POST',
