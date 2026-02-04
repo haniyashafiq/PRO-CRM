@@ -588,9 +588,23 @@ def get_patients():
     if not check_db(): return jsonify([])
     try:
         patients_cursor = mongo.db.patients.find()
+        
+        # Aggregate total canteen spending for all patients
+        canteen_totals_agg = list(mongo.db.canteen_sales.aggregate([
+            {'$match': {
+                '$or': [
+                    {'entry_type': {'$exists': False}},
+                    {'entry_type': {'$ne': 'other'}}
+                ]
+            }},
+            {'$group': {'_id': '$patient_id', 'total': {'$sum': '$amount'}}}
+        ]))
+        canteen_totals_map = {str(item['_id']): item['total'] for item in canteen_totals_agg}
+        
         patients = []
         for p in patients_cursor:
-            p['_id'] = str(p['_id'])
+            patient_id = str(p['_id'])
+            p['_id'] = patient_id
             # Ensure monthlyFee is present for canteen view logic
             p['monthlyFee'] = p.get('monthlyFee', '0')
             p['photo1'] = p.get('photo1', '')
@@ -598,6 +612,10 @@ def get_patients():
             p['photo3'] = p.get('photo3', '')
             p['isDischarged'] = p.get('isDischarged', False)
             p['dischargeDate'] = p.get('dischargeDate')
+            
+            # Include canteen spending as separate field
+            p['canteenSpent'] = canteen_totals_map.get(patient_id, 0)
+            
             patients.append(p)
         return jsonify(patients)
     except Exception as e:
@@ -1051,21 +1069,9 @@ def get_canteen_monthly_table():
             previous_sales_total = previous_sales_map.get(patient_id_str, 0)
             previous_adjustments = previous_adj_map.get(patient_id_str, 0)
             
-            # Count number of previous months since admission
-            admission_date_str = patient.get('admissionDate')
-            months_count = 0
-            if admission_date_str:
-                try:
-                    admission_date = datetime.fromisoformat(admission_date_str.replace('Z', '+00:00'))
-                    months_count = (start_of_month.year - admission_date.year) * 12 + (start_of_month.month - admission_date.month)
-                    if months_count < 0:
-                        months_count = 0
-                except:
-                    months_count = 0
-            
-            # Old Balance = (previous months' allowances + previous adjustments - previous sales) + current month allowance
-            previous_allowances_total = monthly_allowance * months_count
-            calculated_balance = previous_allowances_total + previous_adjustments - previous_sales_total + monthly_allowance
+            # Old Balance = Sum of total canteen money used in all previous months since admission
+            # This is simply the total of all canteen sales before the current viewing month
+            calculated_balance = previous_sales_total
             
             # Check if there's a manual override for this patient's old balance
             old_balance = balance_overrides.get(patient_id_str, calculated_balance)
@@ -1930,6 +1936,71 @@ def get_overheads(month, year):
         })
     except Exception as e:
         print(f"Get Overheads Error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route('/api/overheads/annual/<int:year>', methods=['GET'])
+@role_required(['Admin'])
+def get_overheads_annual(year):
+    """
+    Aggregate total income, expense, and profit for a full year,
+    including canteen sales from canteen_sales collection.
+    """
+    if not check_db(): return jsonify({"error": "Database error"}), 500
+    try:
+        # Aggregate canteen sales for the entire year
+        start_date = datetime(year, 1, 1)
+        end_date = datetime(year + 1, 1, 1)
+        
+        canteen_aggregation = mongo.db.canteen_sales.aggregate([
+            {
+                '$match': {
+                    'date': {
+                        '$gte': start_date,
+                        '$lt': end_date
+                    }
+                }
+            },
+            {
+                '$group': {
+                    '_id': None,
+                    'total_canteen': {'$sum': '$amount'}
+                }
+            }
+        ])
+        
+        canteen_result = list(canteen_aggregation)
+        total_canteen = canteen_result[0]['total_canteen'] if canteen_result else 0
+        
+        # Aggregate overhead entries
+        entries = list(mongo.db.overheads.find({'year': year}))
+
+        total_income = 0.0
+        total_other_expense = 0.0
+
+        for entry in entries:
+            income = float(entry.get('income', 0))
+            # Sum kitchen, others, pay_advance (excluding canteen_auto to avoid double-counting)
+            kitchen = float(entry.get('kitchen', 0))
+            others = float(entry.get('others', 0))
+            pay_advance = float(entry.get('pay_advance', 0))
+            
+            total_income += income
+            total_other_expense += (kitchen + others + pay_advance)
+
+        # Total expense = other expenses + canteen sales
+        total_expense = total_other_expense + total_canteen
+        profit = total_income - total_expense
+
+        return jsonify({
+            'year': year,
+            'total_income': total_income,
+            'total_expense': total_expense,
+            'total_canteen': total_canteen,
+            'profit': profit
+        })
+    except Exception as e:
+        print(f"Get Annual Overheads Error: {e}")
         return jsonify({"error": str(e)}), 500
 
 
