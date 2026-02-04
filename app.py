@@ -2805,15 +2805,12 @@ def delete_old_balance(id):
 @app.route('/health', methods=['GET'])
 def health_check():
     """Lightweight health check endpoint for uptime monitoring"""
-    try:
-        # Quick database ping to verify connection
-        if check_db():
-            mongo.db.command('ping')
-            return jsonify({"status": "ok", "database": "connected"}), 200
-        else:
-            return jsonify({"status": "error", "database": "disconnected"}), 503
-    except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 503
+    return jsonify({"status": "ok", "timestamp": datetime.now().isoformat()}), 200
+
+@app.route('/ping', methods=['GET', 'HEAD'])
+def ping():
+    """Ultra-minimal ping endpoint - even lighter than /health"""
+    return '', 200
     
 
 if __name__ == '__main__':
