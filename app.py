@@ -149,13 +149,12 @@ def role_required(roles):
 def calculate_prorated_fee(monthly_fee, days_elapsed):
     """
     Calculate prorated fee based on days elapsed.
-    If days > 90, calculate as (monthly_fee / 30) * days_elapsed.
-    Otherwise, return the flat monthly_fee.
+    Fee is always calculated as (monthly_fee / 30) * days_elapsed.
     
     This ensures:
-    - First 90 days: Patient pays fixed monthly fee regardless of exact days
-    - After 90 days: Fee is prorated based on actual days stayed
-    - This prevents overcharging for long-term patients
+    - Fee is always prorated based on actual days stayed
+    - Per-day rate is calculated as monthly_fee / 30
+    - Prevents both overcharging and undercharging for any duration
     """
     try:
         # Parse monthly_fee to handle string values with commas
@@ -164,13 +163,9 @@ def calculate_prorated_fee(monthly_fee, days_elapsed):
         else:
             monthly_fee = int(monthly_fee or 0)
         
-        if days_elapsed > 90:
-            # Per-day rate multiplied by actual days elapsed
-            per_day_rate = monthly_fee / 30.0
-            return int(per_day_rate * days_elapsed)
-        else:
-            # Within first 90 days, use flat monthly fee
-            return monthly_fee
+        # Always calculate per-day rate multiplied by actual days elapsed
+        per_day_rate = monthly_fee / 30.0
+        return int(per_day_rate * days_elapsed)
     except (ValueError, TypeError):
         return 0
 
@@ -1107,8 +1102,7 @@ def get_canteen_monthly_table():
                 'other': other_amount,
                 'monthTotal': month_total,
                 'total': total_spent,
-                'isDischarged': is_discharged,
-                'exceedsBalance': month_total > old_balance
+                'isDischarged': is_discharged
             })
         
         return jsonify({
@@ -1170,6 +1164,39 @@ def save_canteen_old_balance():
 @role_required(['Admin', 'Canteen'])
 def save_canteen_daily_entry():
     """Save or update a daily canteen entry"""
+    
+    def calculate_patient_canteen_totals(patient_id, entry_date):
+        """Calculate month total and all-time total for a patient"""
+        # Month total
+        start_of_month = entry_date.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        if entry_date.month == 12:
+            end_of_month = entry_date.replace(year=entry_date.year + 1, month=1, day=1)
+        else:
+            end_of_month = entry_date.replace(month=entry_date.month + 1, day=1)
+        
+        month_pipeline = [
+            {'$match': {
+                'patient_id': patient_id,
+                'date': {'$gte': start_of_month, '$lt': end_of_month}
+            }},
+            {'$group': {'_id': None, 'total': {'$sum': '$amount'}}}
+        ]
+        month_result = list(mongo.db.canteen_sales.aggregate(month_pipeline))
+        month_total = month_result[0]['total'] if month_result else 0
+        
+        # All-time total
+        all_time_pipeline = [
+            {'$match': {'patient_id': patient_id}},
+            {'$group': {'_id': None, 'total': {'$sum': '$amount'}}}
+        ]
+        all_time_result = list(mongo.db.canteen_sales.aggregate(all_time_pipeline))
+        all_time_total = all_time_result[0]['total'] if all_time_result else 0
+        
+        return {
+            'month_total': month_total,
+            'all_time_total': all_time_total
+        }
+    
     if not check_db(): return jsonify({"error": "Database error"}), 500
     
     data = clean_input_data(request.json)
@@ -1182,10 +1209,14 @@ def save_canteen_daily_entry():
         amount = int(data['amount'])
         entry_type = data['entry_type']  # 'daily' or 'other'
         
-        # Check if entry already exists
+        # Create date range for the entire day to match any time on that day
+        start_of_day = entry_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_of_day = start_of_day + timedelta(days=1)
+        
+        # Check if entry already exists (match by date range, not exact timestamp)
         existing_entry = mongo.db.canteen_sales.find_one({
             'patient_id': patient_id,
-            'date': entry_date,
+            'date': {'$gte': start_of_day, '$lt': end_of_day},
             'entry_type': entry_type
         })
         
@@ -1199,18 +1230,40 @@ def save_canteen_daily_entry():
                 # Canteen staff cannot edit existing entries
                 return jsonify({"error": "Canteen staff cannot edit existing entries"}), 403
             elif user_role == 'Admin':
-                # Admin can edit
-                mongo.db.canteen_sales.update_one(
-                    {'_id': existing_entry['_id']},
-                    {'$set': {
-                        'amount': amount,
-                        'edited_by': username,
-                        'edited_at': datetime.now()
-                    }}
-                )
-                return jsonify({"message": "Entry updated", "id": str(existing_entry['_id'])}), 200
+                # Admin can edit or delete
+                if amount == 0:
+                    # Delete the entry if amount is 0 (user cleared the cell)
+                    mongo.db.canteen_sales.delete_one({'_id': existing_entry['_id']})
+                    # Calculate updated totals
+                    totals = calculate_patient_canteen_totals(patient_id, entry_date)
+                    return jsonify({
+                        "message": "Entry deleted", 
+                        "id": str(existing_entry['_id']),
+                        "updated_totals": totals
+                    }), 200
+                else:
+                    # Update the entry with new amount
+                    mongo.db.canteen_sales.update_one(
+                        {'_id': existing_entry['_id']},
+                        {'$set': {
+                            'amount': amount,
+                            'edited_by': username,
+                            'edited_at': datetime.now()
+                        }}
+                    )
+                    # Calculate updated totals
+                    totals = calculate_patient_canteen_totals(patient_id, entry_date)
+                    return jsonify({
+                        "message": "Entry updated", 
+                        "id": str(existing_entry['_id']),
+                        "updated_totals": totals
+                    }), 200
         else:
             # New entry - both Admin and Canteen can add
+            # Skip if amount is 0 (nothing to add)
+            if amount == 0:
+                return jsonify({"message": "No entry created (amount is 0)"}), 200
+            
             new_entry = {
                 'patient_id': patient_id,
                 'date': entry_date,
@@ -1221,7 +1274,13 @@ def save_canteen_daily_entry():
                 'created_at': datetime.now()
             }
             result = mongo.db.canteen_sales.insert_one(new_entry)
-            return jsonify({"message": "Entry recorded", "id": str(result.inserted_id)}), 201
+            # Calculate updated totals
+            totals = calculate_patient_canteen_totals(patient_id, entry_date)
+            return jsonify({
+                "message": "Entry recorded", 
+                "id": str(result.inserted_id),
+                "updated_totals": totals
+            }), 201
             
     except ValueError as ve:
         return jsonify({"error": f"Invalid data format: {str(ve)}"}), 400
