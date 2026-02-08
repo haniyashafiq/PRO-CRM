@@ -4481,6 +4481,34 @@
         totalSalaries = 0;
         totalBills = 0;
         await Promise.all([renderTeam(true), renderUtilityBills(true)]);
+
+        // Calculate expected income from active patients
+        try {
+          const res = await fetch('/api/patients');
+          if (res.ok) {
+            const patients = await res.json();
+            let totalExpectedIncome = 0;
+
+            patients.forEach((patient) => {
+              const pid = patient._id || patient.id;
+              const isDischarged = dischargedPatientIds.has(pid) || patient.isDischarged;
+
+              if (!isDischarged) {
+                const monthlyFee =
+                  parseInt(String(patient.monthlyFee || '0').replace(/,/g, ''), 10) || 0;
+                totalExpectedIncome += monthlyFee;
+              }
+            });
+
+            const incomeEl = document.getElementById('overhead-total-income');
+            if (incomeEl) {
+              incomeEl.innerText = formatCurrency(totalExpectedIncome);
+            }
+          }
+        } catch (e) {
+          console.error('Error calculating expected income:', e);
+        }
+
         updateOverheadTotal();
         loadOldBalances();
       }
