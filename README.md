@@ -353,10 +353,67 @@ This application is configured for Vercel deployment.
    - Test login functionality
    - Verify database connection
 
+### Deploying to Render
+
+Render provides a straightforward deployment process for Python web applications.
+
+1. **Create a Render Account**:
+   - Sign up at [render.com](https://render.com)
+
+2. **Connect Your Repository**:
+   - Link your GitHub/GitLab repository to Render
+   - Or use the Render dashboard to connect
+
+3. **Create a New Web Service**:
+   - Click "New +" and select "Web Service"
+   - Choose your repository
+   - Configure the following settings:
+
+4. **Build Configuration**:
+
+   ```yaml
+   Name: pro-crm
+   Environment: Python 3
+   Build Command: pip install -r requirements.txt
+   Start Command: gunicorn app:app
+   ```
+
+5. **Configure Environment Variables**:
+   - Go to "Environment" tab in your Render service
+   - Add all environment variables from `.env`:
+     - `MONGO_URI`
+     - `SECRET_KEY`
+     - `GMAIL_USER`
+     - `GMAIL_APP_PASSWORD`
+     - `PASSWORD_RESET_EXPIRY_MINUTES`
+     - `ADMIN_EMAIL`
+
+6. **Deploy**:
+   - Click "Create Web Service"
+   - Render will automatically build and deploy your application
+   - Deployment typically takes 2-5 minutes
+
+7. **Verify Deployment**:
+   - Access your app at `https://your-app-name.onrender.com`
+   - Test login functionality
+   - Verify database connection
+
+8. **Optional - Custom Domain**:
+   - Go to "Settings" → "Custom Domain"
+   - Add your domain and configure DNS settings
+
+#### Render-Specific Considerations
+
+- **Free Tier**: Applications on free tier may spin down after inactivity (cold starts)
+- **Automatic Deploys**: Enable auto-deploy from your main branch
+- **Health Checks**: Render automatically monitors your application health
+- **Logs**: Access real-time logs from the Render dashboard
+- **Scaling**: Easily scale to paid plans for better performance
+
 ### Configuration Files
 
 - **vercel.json**: Vercel deployment configuration
-- **requirements.txt**: Python dependencies
+- **requirements.txt**: Python dependencies (used by both Vercel and Render)
 - **.env**: Environment variables (not committed to Git)
 
 ---
@@ -443,65 +500,9 @@ This application is configured for Vercel deployment.
 
 ---
 
-## 🤝 Contributing
-
-Contributions are welcome! Please follow these guidelines:
-
-1. **Fork the Repository**
-2. **Create a Feature Branch**:
-   ```bash
-   git checkout -b feature/AmazingFeature
-   ```
-3. **Commit Your Changes**:
-   ```bash
-   git commit -m "Add some AmazingFeature"
-   ```
-4. **Push to the Branch**:
-   ```bash
-   git push origin feature/AmazingFeature
-   ```
-5. **Open a Pull Request**
-
-### Development Guidelines
-
-- Follow PEP 8 style guide for Python code
-- Write descriptive commit messages
-- Add comments for complex logic
-- Update documentation for new features
-- Test thoroughly before submitting PR
-
----
-
-## 📞 Support
-
-For issues, questions, or suggestions:
-
-- **GitHub Issues**: [Report a bug](https://github.com/yourusername/PRO-CRM/issues)
-- **Email**: pro.cms.noreply@gmail.com
-- **Documentation**: Check the `/docs` folder for detailed guides
-
----
-
 ## 📝 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
----
-
-## 🙏 Acknowledgments
-
-- **Flask Community** for the excellent web framework
-- **MongoDB** for robust database solutions
-- **Contributors** who have helped improve this system
-- **Healthcare Professionals** for their valuable feedback
-
----
-
-## 📊 Project Status
-
-**Current Version:** 1.0.0  
-**Development Status:** Active  
-**Last Updated:** February 2026
 
 ---
 
