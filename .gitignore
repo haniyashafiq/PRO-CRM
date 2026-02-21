@@ -1,2 +1,6 @@
 .env
 clean_database.py
+
+# Database backups
+pro_crm_backup_*/
+hospital_crm_db/
